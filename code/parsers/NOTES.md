@@ -132,7 +132,14 @@ models.py. identity.py must include the following (see finding 1 above):
    * NOT_APPLICABLE cases use `[]`.
 
 `tools/sample_harness.py` implements steps 1–8 with a stand-in identity
-resolver and no classifier. Use it as the reference wiring.
+resolver and no classifier. Use it as the reference wiring. It honours
+`HARNESS_DATASET=<dir>`.
+
+**Please give main.py a `--dataset DIR` option** (default `dataset/`). The
+team-made cases in `code/evaluation/custom_cases/` are complete mini-datasets,
+and `evaluation/main.py` can run each one with
+`--dataset code/evaluation/custom_cases/<case>`, then compare the result with
+its `expected_output.csv`. The format is described in that folder's README.
 
 ### multimodal.py (Person A owns it)
 

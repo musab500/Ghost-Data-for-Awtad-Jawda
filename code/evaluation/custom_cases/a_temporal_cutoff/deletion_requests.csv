@@ -1,0 +1,2 @@
+case_id,email,requested_at,reported_status,reported_at,audit_at,request_text
+custom_a,alice.cutoff@example.com,2026-09-01T09:00:00Z,COMPLETE,2026-09-02T09:00:00Z,2026-09-10T12:00:00Z,Please permanently delete my account and all personal data linked to this email address.

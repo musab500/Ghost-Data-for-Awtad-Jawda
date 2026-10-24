@@ -1,0 +1,2 @@
+activity_id,event_time,event_type,source_system,target_system,resource_id,reported_result,details
+activity_1,2026-09-02T08:30:00Z,DELETE_RECORD,deletion_worker,security_service,audit_record_9003,SUCCESS,Deletion worker reported the requested operation as completed.

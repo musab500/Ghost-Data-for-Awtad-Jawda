@@ -13,7 +13,8 @@ from parsers.activity import parse_activity
 from state import EvidenceIndex, CaseWindow
 from rules import load_rules, decide, OPERATION_ORDER, OP_STATE
 
-ds = repo / "dataset"
+import os
+ds = Path(os.environ["HARNESS_DATASET"]) if os.environ.get("HARNESS_DATASET") else repo / "dataset"
 obs, scopes, skipped = load_evidence(ds)
 events, aobs, links = parse_activity(ds)
 from parsers.activity import resource_aliases
@@ -43,7 +44,8 @@ by_email = {}
 for uid, p in people.items():
     for e in p.emails: by_email.setdefault(e, uid)
 
-ALL = list(csv.DictReader(open(ds / "sample_deletion_requests.csv"))) + list(csv.DictReader(open(ds / "deletion_requests.csv")))
+ALL = [r for f in ("sample_deletion_requests.csv", "deletion_requests.csv") if (ds / f).exists()
+       for r in csv.DictReader(open(ds / f))]
 assert len({r["case_id"] for r in ALL}) == len(ALL)
 DIRECT = {}
 from models import parse_ts as _pt

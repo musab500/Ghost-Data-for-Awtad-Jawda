@@ -1,0 +1,11 @@
+CUSTOMER PLATFORM - SHIFT HANDOVER
+Snapshot: 2026-09-05T12:00:00Z
+
+Checks:
+
+- 2026-09-05T12:00:00Z | account_service | account_9002 | USER_PROFILE | NOT_FOUND | bob.recreate@example.com
+- 2026-09-05T12:00:00Z | search_service | search_9002 | SEARCH_INDEX_ENTRY | NOT_FOUND | bob.recreate@example.com
+- 2026-09-05T12:00:00Z | export_service | export_9002 | USER_EXPORT | FOUND | bob.recreate@example.com
+- 2026-09-05T12:00:00Z | integration_service | data_flow_9002 | DATA_FLOW | ACTIVE | bob.recreate@example.com
+- 2026-09-05T12:00:00Z | backup_service | backup_9002 | BACKUP_ARCHIVE | ACTIVE | bob.recreate@example.com
+- 2026-09-05T12:00:00Z | security_service | audit_record_9002 | SECURITY_AUDIT_LOG | FOUND | user_902
