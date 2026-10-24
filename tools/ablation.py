@@ -20,8 +20,9 @@ DEFAULTS = {k: getattr(state, k) for k in (
 ORIG_DIRECT = state.EvidenceIndex.direct_links
 
 
-def no_previous_request_window(self, identity, not_before=None, audit_at=None):
-    return ORIG_DIRECT(self, identity, None, audit_at)
+def no_request_windows(self, identity, not_before=None, audit_at=None, has_later_request=False):
+    """Ablation: ignore the person's other requests (both window boundaries)."""
+    return ORIG_DIRECT(self, identity, None, audit_at, False)
 
 
 ABLATIONS = [
@@ -33,7 +34,7 @@ ABLATIONS = [
     ("- all three run-shape terms", {"SLOT_TOLERANCE_MIN": -1.0, "RUN_AFFINITY_BONUS": 0.0,
                                      "FAILED_RUN_PENALTY": 0.0}, None),
     ("- status/result tie-break", {"STATUS_MISMATCH_PENALTY": 0.0}, None),
-    ("- previous-request window", {}, no_previous_request_window),
+    ("- per-person request windows", {}, no_request_windows),
 ]
 
 

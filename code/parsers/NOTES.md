@@ -263,7 +263,7 @@ evidence. None of them refers to a case_id or an answer label.
 | Slot occupancy (hard exclusion) | A run performs one action per slot. A case whose own record already fills the R-28 slot (e.g. its tombstone) cannot take a second record in that slot. | It is derived from the case's own directly linked records. | Exact 25 → 23 |
 | Run affinity (-10) | A case that owns sibling actions of the same pre-report run (support, data-flow, backup) is the run the anonymisation belongs to. | It is derived from the case's own records. | **No measurable effect on the samples** (25 → 25). Slot occupancy and the failed-run penalty already separate the sample cases. It is kept for hidden cases where neither of those applies, and it can be dropped without a sample regression. |
 | Failed-run penalty (+15) | A run that failed retries after the report. A case whose own records show only post-report retries did not run the pre-report policy slot. | It is derived from the case's own records. | Exact 25 → 22 |
-| Previous-request window (not a cost) | Some people file two requests (e.g. case_46 in March, case_17 in August). Evidence captured before the earlier request's audit belongs to that request. | It is a temporal rule over the person's own requests. | Exact 25 → 23; P 0.979 → 0.959 |
+| Per-person request windows (not a cost) | Some people file two requests (e.g. case_46 in March, case_17 in August). Each piece of linking evidence belongs to one request: the earliest whose window (previous audit_at, audit_at] contains it. | It is a temporal rule over the person's own requests. | Exact 25 → 23; P 0.979 → 0.959 |
 
 Ablation (`python3 tools/ablation.py`, 32 samples):
 
@@ -276,7 +276,9 @@ Ablation (`python3 tools/ablation.py`, 32 samples):
 | - failed-run penalty | 32/32 | 22/32 | 0.968 | 0.953 | -3 |
 | - all three run-shape terms | 32/32 | 22/32 | 0.964 | 0.959 | -3 |
 | - status/result tie-break | 32/32 | 22/32 | 0.963 | 0.948 | -3 |
-| - previous-request window | 32/32 | 23/32 | 0.959 | 0.964 | -2 |
+| - per-person request windows | 32/32 | 23/32 | 0.959 | 0.964 | -2 |
+
+Re-run on the merged tree (person-a + Person B's main): **identical**.
 
 **Sensitivity:** each weight was multiplied by 0.5 and by 2, with the others
 left at their defaults. No sample result changes. The results depend on the
