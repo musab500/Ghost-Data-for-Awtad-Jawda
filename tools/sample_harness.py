@@ -48,6 +48,7 @@ assert len({r["case_id"] for r in ALL}) == len(ALL)
 DIRECT = {}
 from models import parse_ts as _pt
 _prev = {}   # case_id -> audit_at of the same person's previous request
+_has_next = set()   # case_ids whose person has a later request
 _by_user = defaultdict(list)
 for r in ALL:
     _by_user[by_email.get(norm_email(r["email"]))].append(r)
@@ -55,9 +56,10 @@ for uid, rs in _by_user.items():
     rs = sorted(rs, key=lambda r: _pt(r["audit_at"]))
     for a, b in zip(rs, rs[1:]):
         _prev[b["case_id"]] = a["audit_at"]
+        _has_next.add(a["case_id"])
 for r in ALL:
     uid = by_email.get(norm_email(r["email"]))
-    DIRECT[r["case_id"]] = idx.direct_links(people[uid], _prev.get(r["case_id"]), r["audit_at"]) if uid else {}
+    DIRECT[r["case_id"]] = idx.direct_links(people[uid], _prev.get(r["case_id"]), r["audit_at"], r["case_id"] in _has_next) if uid else {}
 def expects_complete(r):
     decs = [decide(idx.state_at(x, r["audit_at"]), rules, r["audit_at"]) for x in DIRECT[r["case_id"]]]
     return not any(d and d.violates for d in decs)

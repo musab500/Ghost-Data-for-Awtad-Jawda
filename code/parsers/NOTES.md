@@ -267,6 +267,40 @@ main argument that the weights are not fitted to the sample labels.
 | SLOT_TOLERANCE_MIN x0.5 | 32/32 | 25/32 | 0.979 | 0.964 | +0 |
 | SLOT_TOLERANCE_MIN x2 | 32/32 | 25/32 | 0.979 | 0.964 | +0 |
 
+## Full 518-case sanity run (`python3 tools/full_run_report.py`)
+
+There is no classifier in this tool, so every request is treated as a
+deletion request.
+
+```
+requests: 518
+status distribution: {'INCOMPLETE': 356, 'COMPLETE': 162}
+steps per case: min 1, median 6.5, mean 6.34, max 15
+steps histogram: {1: 9, 2: 38, 3: 86, 4: 23, 5: 63, 6: 40, 7: 76, 8: 127, 9: 4, 12: 4, 13: 12, 14: 34, 15: 2}
+FINDING counts by operation: {'REPORT_REMAINING_RECORD': 378, 'REPORT_ACTIVE_DATA_FLOW': 113, 'REPORT_EXPOSED_PII': 206, 'REPORT_RESTORE_RISK': 26}
+cases with zero resources (0): []
+cases with no USER_PROFILE resource (5): ['case_45', 'case_52', 'case_53', 'case_61', 'case_63']
+cases where assign_workflow gave no candidate (216); of these without any USER_PROFILE: ['case_45', 'case_52', 'case_53', 'case_61', 'case_63']
+resources linked to more than one PERSON (0):
+resources shared by several requests of the SAME person (0): []
+COMPLETE-case steps without evidence (must be 0): []
+```
+
+**Bugs found and fixed while building this report:**
+* **Evidence counted for two requests of the same person** (e.g. Ingrid's
+  case_52 / case_33, Priya's case_61 / case_07). Each piece of linking
+  evidence is now attributed to one request: the earliest request whose
+  window, (previous audit_at, audit_at], contains it. Evidence after the
+  latest request's audit goes to the latest request.
+* **Records linked only by evidence captured after audit_at.** These are still
+  allowed for a person's latest request: the gold answer for case_09 verifies
+  account_3960, which is evidenced only after the audit.
+
+**Remaining by design:** the five cases with no USER_PROFILE (45, 52, 53, 61,
+63) are the hand-crafted single-artifact scenarios (screenshot or PDF). No
+participant file links an account to them; the only link would be matching ID
+numbers, which is not evidence.
+
 ## Known limitations (documented, deliberately not fitted)
 
 * **case_03 / case_44: analytics_9406 vs analytics_5589.** Both cases have the

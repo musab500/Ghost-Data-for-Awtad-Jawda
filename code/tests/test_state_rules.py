@@ -188,6 +188,21 @@ class Linking(unittest.TestCase):
         out = idx.assign_workflow([CaseWindow("c", "2026-09-05T12:00:00Z", AUDIT)])
         self.assertEqual(out.get("c", {}), {})
 
+    def test_evidence_is_attributed_to_one_request_of_the_same_person(self):
+        # Same person, requests audited 03-11 and 09-15. Evidence from March
+        # belongs to the first request, evidence from August to the second.
+        idx = EvidenceIndex([
+            ob("tombstone_1", "identity_service", "ACCOUNT_TOMBSTONE", "REDACTED", "2026-03-10T00:00:00Z", "e1", ["user_1"]),
+            ob("export_2", "export_service", "USER_EXPORT", "FOUND", "2026-08-01T00:00:00Z", "e2", ["user_1"]),
+            ob("audit_record_3", "security_service", "SECURITY_AUDIT_LOG", "FOUND", "2026-10-01T00:00:00Z", "e3", ["user_1"]),
+        ], [])
+        who = Identity("user_1")
+        first = idx.direct_links(who, None, "2026-03-11T00:00:00Z", has_later_request=True)
+        second = idx.direct_links(who, "2026-03-11T00:00:00Z", "2026-09-15T00:00:00Z")
+        self.assertEqual(set(first), {"tombstone_1"})
+        # post-audit evidence may still identify records for the latest request
+        self.assertEqual(set(second), {"export_2", "audit_record_3"})
+
     def test_stale_second_account_is_dropped(self):
         idx = EvidenceIndex([
             ob("account_old", "account_service", "USER_PROFILE", "NOT_FOUND", "2026-03-01T00:00:00Z", "e1", ["a@x.com"]),
