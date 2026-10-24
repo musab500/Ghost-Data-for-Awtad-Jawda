@@ -156,6 +156,31 @@ class Linking(unittest.TestCase):
         self.assertEqual(set(out["c_a_incomplete"]), {"account_noev"})
         self.assertEqual((idx.evidence_tier("account_ev", AUDIT), idx.evidence_tier("account_noev", AUDIT)), (0, 2))
 
+    def test_workflow_run_shape_slot_affinity_and_failed_run(self):
+        # Three cases reported at 12:00; one identifier-less analytics record
+        # anonymised in the R-28 slot.
+        rep = "2026-09-05T12:00:00Z"
+        events = [
+            self.ev("p1", "2026-09-05T11:32:00Z", "ANONYMIZE_RECORD", "analytics_platform", "analytics_x"),
+            # case "slot": its own tombstone already fills the R-28 slot
+            self.ev("t1", "2026-09-05T11:31:30Z", "REDACT_RECORD", "identity_service", "tombstone_s"),
+            # case "run": owns the sibling support redaction of the same run
+            self.ev("s1", "2026-09-05T11:39:00Z", "REDACT_RECORD", "support_platform", "support_r"),
+            # case "failed": its own actions are post-report retries only
+            self.ev("f1", "2026-09-05T13:00:00Z", "DELETE_RECORD", "search_service", "search_f", "FAILED"),
+        ]
+        # Each case's own resource is directly linked (it carries an identifier).
+        own_obs = [ob(r, "s", None, "FOUND", "2026-09-01T00:00:00Z", "e", [f"{r}@x.com"])
+                   for r in ("tombstone_s", "support_r", "search_f")]
+        idx = EvidenceIndex(own_obs, [], [], events)
+        mk = lambda cid, own: CaseWindow(cid, rep, AUDIT, set(), "COMPLETE", False, {own})
+        out = idx.assign_workflow([mk("a_failed", "search_f"), mk("b_slot", "tombstone_s"), mk("c_run", "support_r")])
+        self.assertEqual(out.get("c_run"), {"analytics_x": "workflow:p1"})
+        # Without the sibling case, the slot-filled case still cannot take it,
+        # and the failed-run case only gets it because nobody else can.
+        out = idx.assign_workflow([mk("a_failed", "search_f"), mk("b_slot", "tombstone_s")])
+        self.assertEqual(set(out), {"a_failed"})
+
     def test_resource_with_someone_elses_identifier_is_not_assigned(self):
         events = [self.ev("a1", "2026-09-05T11:40:00Z", "ANONYMIZE_RECORD", "analytics_platform", "analytics_1")]
         idx = EvidenceIndex([ob("analytics_1", "analytics_platform", "ANALYTICS_PROFILE", "IDENTIFIABLE",

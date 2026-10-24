@@ -44,6 +44,12 @@ STATUS_MISMATCH_PENALTY = 45.0
 # Extra cost for a case expected to be COMPLETE, by the candidate's evidence
 # tier at audit_at (0 explicit observation, 1 snapshot omission only, 2 none).
 CITATION_TIER_PENALTY = (0.0, 5.0, 20.0)
+# Workflow-run shape. A run that finishes before the report performs one
+# policy action per time slot (analytics/tombstone, support, data flow,
+# backup); a run that fails retries after the report.
+SLOT_TOLERANCE_MIN = 2.0       # actions this close share a slot
+RUN_AFFINITY_BONUS = 10.0      # case owns sibling actions of the same run
+FAILED_RUN_PENALTY = 15.0      # case's own actions are post-report retries only
 # Where a case's own workflow actions sit relative to its reported_at
 # (minutes): the primary-profile deletion is submitted first, policy actions
 # on identifier-less copies (anonymise, redact, disable, block) follow just
@@ -69,6 +75,9 @@ class CaseWindow:
     # case is expected to be COMPLETE and its verification steps must cite
     # evidence. Such cases prefer candidates with stronger citable evidence.
     expects_complete: bool = False
+    # Resources directly linked to the case; their workflow actions reveal the
+    # shape of the case's workflow run (see assign_workflow).
+    direct_resources: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -159,6 +168,10 @@ class EvidenceIndex:
         minimum-cost bipartite matching (per category). Candidate cost is
         distance from the expected slot, plus a penalty when an account
         deletion's reported_result disagrees with the case's reported_status,
+        plus workflow-run shape terms for non-account actions: a case whose
+        own resources already fill the candidate's time slot cannot take it,
+        a case owning sibling actions of the same pre-report run gets a bonus,
+        and a case whose own actions are only post-report retries a penalty;
         plus, for a case expected to be COMPLETE, a cost for candidates whose
         state at audit_at is only weakly citable (see evidence_tier): such a
         case must cite proof for every verification step, while an INCOMPLETE
@@ -169,6 +182,13 @@ class EvidenceIndex:
         for c in cases:
             rep = parse_ts(c.reported_at)
             cut = parse_ts(c.audit_at)
+            # Offsets (minutes) of workflow actions on the case's own resources.
+            own = [(parse_ts(e.event_time) - rep).total_seconds() / 60
+                   for e in self.events
+                   if e.resource_id in c.direct_resources and e.source_system in WORKFLOW_SOURCES
+                   and not (e.event_type == "DELETE_RECORD" and e.target_system == "account_service")]
+            own_pre = [o for o in own if POLICY_WINDOW[0] <= o <= 0]
+            own_post = [o for o in own if o > POLICY_WINDOW[1]]
             for e in self.events:
                 if e.source_system not in WORKFLOW_SOURCES or e.event_type not in WORKFLOW_TYPES:
                     continue
@@ -191,6 +211,13 @@ class EvidenceIndex:
                     score += STATUS_MISMATCH_PENALTY
                 if c.expects_complete:
                     score += CITATION_TIER_PENALTY[self.evidence_tier(e.resource_id, c.audit_at)]
+                if not is_account:
+                    if any(abs(o - offset) <= SLOT_TOLERANCE_MIN for o in own):
+                        continue      # this slot of the case's run is already filled
+                    if own_pre:
+                        score -= RUN_AFFINITY_BONUS
+                    elif own_post:
+                        score += FAILED_RUN_PENALTY
                 cand.append((score, c.case_id, e.resource_id, cat, e.activity_id))
         return _min_cost_assignment(cand)
 

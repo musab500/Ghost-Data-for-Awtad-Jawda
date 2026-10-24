@@ -50,7 +50,7 @@ def expects_complete(r):
     return not any(d and d.violates for d in decs)
 WF = idx.assign_workflow([CaseWindow(r["case_id"], r["reported_at"], r["audit_at"],
                           {idx.category_of(x) for x in DIRECT[r["case_id"]]}, r["reported_status"],
-                          expects_complete(r)) for r in ALL])
+                          expects_complete(r), set(DIRECT[r["case_id"]])) for r in ALL])
 
 def run_case(req):
     uid = by_email.get(norm_email(req["email"]))
