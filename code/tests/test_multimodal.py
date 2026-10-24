@@ -1,6 +1,7 @@
 """Tests for multimodal.py (Person A). No network: the vision API is never
 called because ANTHROPIC_API_KEY is removed for these tests."""
 import io
+import json
 import os
 import shutil
 import sys
@@ -85,18 +86,54 @@ class Multimodal(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             log = io.StringIO()
             png = [e for e in self.skipped if e.kind == "png"][:1]
-            out = multimodal_observations(png, self.aliases, cache_dir=Path(d), log=log)
+            out = multimodal_observations(png, self.aliases, cache_dir=Path(d), log=log,
+                                          manual_dir=Path(d) / "none")
             self.assertEqual(out, [])
             self.assertIn("not processed", log.getvalue())
             usage = (Path(d) / "usage.json").read_text()
             self.assertIn('"api_calls_count": 0', usage)
 
+    def test_cached_api_result_becomes_observation(self):
+        # A cached API result (same key the real call would write) is used
+        # without any API call, and its fields map onto the Observation.
+        ev = next(e for e in self.skipped if e.file_id == "evidence_28")   # support ticket PNG
+        cached = {"file_id": ev.file_id, "file_sha256": multimodal._sha256(ev.path),
+                  "extractor": {"method": "api", "model": multimodal._model(),
+                                "prompt_version": multimodal.PROMPT_VERSION},
+                  "usage": {"input_tokens": 1234, "output_tokens": 56},
+                  "records": [{"resource_id": "support_1034", "keys": ["CS-5034"],
+                               "system_id": "support_platform", "category": "SUPPORT_MESSAGE",
+                               "state": "IDENTIFIABLE", "identifiers": ["KAgyeman8947@fastmail.com"],
+                               "observed_at": "2026-05-24T06:59:00Z", "notes": "ticket"}]}
+        with tempfile.TemporaryDirectory() as d:
+            key = multimodal._cache_key(ev.path, multimodal._model())
+            (Path(d) / f"{key}.json").write_text(json.dumps(cached))
+            out = multimodal_observations([ev], self.aliases, cache_dir=Path(d), log=io.StringIO(),
+                                          manual_dir=Path(d) / "none")
+            usage = json.loads((Path(d) / "usage.json").read_text())
+        o, = out
+        self.assertEqual((o.resource_id, o.system_id, o.category, o.state, o.source_kind),
+                         ("support_1034", "support_platform", "SUPPORT_MESSAGE", "IDENTIFIABLE", "image"))
+        self.assertEqual((o.evidence_id, o.captured_at), ("evidence_28", ev.captured_at))
+        self.assertEqual(o.identifiers, {"kagyeman8947@fastmail.com"})
+        self.assertEqual(o.observed_at, "2026-05-24T06:59:00Z")
+        self.assertEqual(usage["api_calls_count"], 0)
+        self.assertEqual(usage["files_used"][0]["usage"], {"input_tokens": 1234, "output_tokens": 56})
+
+    def test_cache_key_depends_on_model_and_prompt(self):
+        ev = self.skipped[0]
+        self.assertNotEqual(multimodal._cache_key(ev.path, "model-a"), multimodal._cache_key(ev.path, "model-b"))
+
+    def test_main_py_hook_call_shape(self):
+        # main.py calls multimodal_observations(skipped, dataset_dir)
+        out = multimodal_observations(self.skipped, DATASET, log=io.StringIO(),
+                                      usage_path=Path(tempfile.mkdtemp()) / "u.json")
+        self.assertIn("object_19", {o.resource_id for o in out})   # needs the catalog aliases
+
     def test_manual_entries_can_be_disabled(self):
         os.environ["MULTIMODAL_ALLOW_MANUAL"] = "0"
         try:
             with tempfile.TemporaryDirectory() as d:
-                for p in multimodal.CACHE_DIR.glob("*__manual.json"):
-                    shutil.copy(p, d)
                 png = [e for e in self.skipped if e.kind == "png"]
                 out = multimodal_observations(png, self.aliases, cache_dir=Path(d), log=io.StringIO())
                 self.assertEqual(out, [])

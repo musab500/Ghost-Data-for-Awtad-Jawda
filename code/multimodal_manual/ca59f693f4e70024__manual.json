@@ -15,11 +15,10 @@
       "identifiers": [
         "user_03"
       ],
-      "keys": [
-        "audit_record_003"
-      ],
+      "keys": [],
       "notes": "Account closure recorded, signature valid, journal 2026-Q3.",
       "observed_at": "2026-08-25T04:03:00Z",
+      "resource_id": "audit_record_003",
       "state": "FOUND",
       "system_id": "security_service"
     },
@@ -28,11 +27,10 @@
       "identifiers": [
         "user_03"
       ],
-      "keys": [
-        "audit_record_002"
-      ],
+      "keys": [],
       "notes": "Session revoked, integrity valid.",
       "observed_at": "2026-08-25T03:21:00Z",
+      "resource_id": "audit_record_002",
       "state": "FOUND",
       "system_id": "security_service"
     },
@@ -41,11 +39,10 @@
       "identifiers": [
         "user_03"
       ],
-      "keys": [
-        "audit_record_001"
-      ],
+      "keys": [],
       "notes": "Recovery challenge completed, integrity valid.",
       "observed_at": "2026-08-24T16:14:00Z",
+      "resource_id": "audit_record_001",
       "state": "FOUND",
       "system_id": "security_service"
     },
@@ -54,11 +51,10 @@
       "identifiers": [
         "user_03"
       ],
-      "keys": [
-        "audit_record_006"
-      ],
+      "keys": [],
       "notes": "Email change confirmed, integrity valid.",
       "observed_at": "2026-08-22T11:27:00Z",
+      "resource_id": "audit_record_006",
       "state": "FOUND",
       "system_id": "security_service"
     },
@@ -67,11 +63,10 @@
       "identifiers": [
         "user_03"
       ],
-      "keys": [
-        "audit_record_005"
-      ],
+      "keys": [],
       "notes": "Login from new device, integrity valid.",
       "observed_at": "2026-08-20T09:42:00Z",
+      "resource_id": "audit_record_005",
       "state": "FOUND",
       "system_id": "security_service"
     },
@@ -80,11 +75,10 @@
       "identifiers": [
         "user_03"
       ],
-      "keys": [
-        "audit_record_004"
-      ],
+      "keys": [],
       "notes": "Password changed, integrity valid.",
       "observed_at": "2026-08-18T14:05:00Z",
+      "resource_id": "audit_record_004",
       "state": "FOUND",
       "system_id": "security_service"
     }

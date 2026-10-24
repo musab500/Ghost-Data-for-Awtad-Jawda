@@ -18,11 +18,11 @@
         "+81 90 7610 2507"
       ],
       "keys": [
-        "account_5762",
         "user_11"
       ],
       "notes": "Customer Operations profile page for Haruka Sato (Silver), last contact 24 Sep 2026.",
       "observed_at": "",
+      "resource_id": "account_5762",
       "state": "FOUND",
       "system_id": "account_service"
     },
@@ -32,11 +32,11 @@
         "user_11"
       ],
       "keys": [
-        "support_9538",
         "CS-8538"
       ],
       "notes": "Support case CS-8538 listed on the customer's profile; customer replied 24 Sep.",
       "observed_at": "",
+      "resource_id": "support_9538",
       "state": "FOUND",
       "system_id": "support_platform"
     }

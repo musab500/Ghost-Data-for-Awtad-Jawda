@@ -6,23 +6,24 @@
     "prompt_version": "manual-1",
     "transcribed_at": "2026-10-24"
   },
-  "file_id": "evidence_28",
-  "file_path": "evidence/images/support_ticket_console_20260524.png",
-  "file_sha256": "542b7aec17e6b2f38827896e7eb52c70e4bfaaca22433621be1f80f54884e944",
+  "file_id": "evidence_19",
+  "file_path": "evidence/images/analytics_profile_view_20260713.png",
+  "file_sha256": "4e4cb259bc2010b622b0c53fe5872258f994fefc23452a83bb27473758693484",
   "records": [
     {
-      "category": "SUPPORT_MESSAGE",
+      "category": "ANALYTICS_PROFILE",
       "identifiers": [
-        "kagyeman8947@fastmail.com"
+        "user_20",
+        "darwish.omar@icloud.com"
       ],
       "keys": [
-        "support_1034",
-        "CS-5034"
+        "user_20"
       ],
-      "notes": "Ticket 'Where is my delivery?' for Kofi Agyeman; customer name and email shown; order ORD-20265034.",
-      "observed_at": "2026-05-24T07:00:00Z",
+      "notes": "Pulse Analytics user profile for Omar Darwish with name and email; last activity 13 Jul 2026 14:22 UTC.",
+      "observed_at": "2026-07-13T14:22:00Z",
+      "resource_id": "analytics_7438",
       "state": "IDENTIFIABLE",
-      "system_id": "support_platform"
+      "system_id": "analytics_platform"
     }
   ],
   "usage": null

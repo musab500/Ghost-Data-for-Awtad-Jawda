@@ -16,11 +16,10 @@
         "sj.park@naver.com",
         "+82 10-5837-9451"
       ],
-      "keys": [
-        "marketing_001"
-      ],
+      "keys": [],
       "notes": "Live audience profile (Soo-jin Park), email opt-in Yes; profile refreshed from live data 15 Sep 2026 23:40 UTC.",
       "observed_at": "2026-09-15T23:40:00Z",
+      "resource_id": "marketing_001",
       "state": "FOUND",
       "system_id": "marketing_platform"
     }

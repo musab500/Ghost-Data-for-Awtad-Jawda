@@ -20,6 +20,7 @@
       ],
       "notes": "Retained customer reference user_17 with linked order/support/finance references; no name, email or phone shown.",
       "observed_at": "2026-03-10T07:18:00Z",
+      "resource_id": "",
       "state": "REDACTED",
       "system_id": "identity_service"
     }

@@ -18,6 +18,7 @@
       ],
       "notes": "Object in northstar-customer-data/support-attachments/2026/02, v3, uploader support-service, modified 12 Feb 18:42 UTC.",
       "observed_at": "2026-02-12T18:42:00Z",
+      "resource_id": "",
       "state": "FOUND",
       "system_id": "object_storage"
     },
@@ -29,6 +30,7 @@
       ],
       "notes": "Other object in the same prefix.",
       "observed_at": "",
+      "resource_id": "",
       "state": "FOUND",
       "system_id": "object_storage"
     },
@@ -40,6 +42,7 @@
       ],
       "notes": "Other object in the same prefix.",
       "observed_at": "",
+      "resource_id": "",
       "state": "FOUND",
       "system_id": "object_storage"
     },
@@ -51,6 +54,7 @@
       ],
       "notes": "Other object in the same prefix.",
       "observed_at": "",
+      "resource_id": "",
       "state": "FOUND",
       "system_id": "object_storage"
     },
@@ -62,6 +66,7 @@
       ],
       "notes": "Other object in the same prefix.",
       "observed_at": "",
+      "resource_id": "",
       "state": "FOUND",
       "system_id": "object_storage"
     },
@@ -73,6 +78,7 @@
       ],
       "notes": "Other object in the same prefix.",
       "observed_at": "",
+      "resource_id": "",
       "state": "FOUND",
       "system_id": "object_storage"
     },
@@ -84,6 +90,7 @@
       ],
       "notes": "Other object in the same prefix.",
       "observed_at": "",
+      "resource_id": "",
       "state": "FOUND",
       "system_id": "object_storage"
     },
@@ -95,6 +102,7 @@
       ],
       "notes": "Other object in the same prefix.",
       "observed_at": "",
+      "resource_id": "",
       "state": "FOUND",
       "system_id": "object_storage"
     }

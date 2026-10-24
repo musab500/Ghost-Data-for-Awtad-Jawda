@@ -15,11 +15,10 @@
       "identifiers": [
         "jain.aditi@gmail.com"
       ],
-      "keys": [
-        "data_flow_1121"
-      ],
+      "keys": [],
       "notes": "Healthy continuous sync to customer_analytics_warehouse; 124 events delivered 07:59:42.",
       "observed_at": "2026-08-07T07:59:42Z",
+      "resource_id": "data_flow_1121",
       "state": "ACTIVE",
       "system_id": "integration_service"
     },
@@ -28,11 +27,10 @@
       "identifiers": [
         "lucia-torres@gmail.com"
       ],
-      "keys": [
-        "data_flow_9846"
-      ],
+      "keys": [],
       "notes": "Continuous sync to customer_analytics_warehouse, 842 events/hour.",
       "observed_at": "2026-08-07T07:59:36Z",
+      "resource_id": "data_flow_9846",
       "state": "ACTIVE",
       "system_id": "integration_service"
     }

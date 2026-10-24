@@ -7,22 +7,25 @@ PDFs
 
 PNG screenshots
   No OCR engine is installed, so screenshots are transcribed by a vision LLM:
-  one call per file, structured JSON output, validated before use. Results are
-  cached in code/multimodal_cache/ keyed by file SHA-256 + model + prompt
-  version, so a full run calls the model at most once per file, ever.
+  one call per file, strict JSON-schema output, validated against models.STATES
+  and models.CATEGORIES before use. Results are cached in code/.cache/multimodal/
+  keyed by sha256(file bytes + model + prompt version), so re-runs make zero
+  calls.
 
-  The API key is read from ANTHROPIC_API_KEY only. Without a key, a file with
-  no usable cache entry is skipped with a warning; nothing is invented.
-  Cache entries record how they were produced ("api" with real token usage, or
-  "manual_transcription" for entries transcribed outside the API, with usage
-  null). Set MULTIMODAL_ALLOW_MANUAL=0 to ignore manual entries.
+  The API key is read from ANTHROPIC_API_KEY only; the model from
+  MULTIMODAL_MODEL (default claude-opus-5-5). Without a key, a file with no
+  cached result is skipped with a warning; nothing is invented.
+  code/multimodal_manual/ holds committed transcriptions of the screenshots made
+  without the API (method "manual_transcription", usage null). They are used
+  only when no API result exists; MULTIMODAL_ALLOW_MANUAL=0 ignores them.
 
 Every record must name its resource explicitly: either a resource id visible
 in the evidence, or a business key (statement number, file name, customer
 key) that the data catalog maps to a resource id (parsers.activity.
 resource_aliases). Rows without either are dropped, never guessed.
 
-API usage for the run is written to code/multimodal_cache/usage.json.
+Real per-call API usage (model, input/output tokens) for the run is written to
+code/.cache/multimodal_usage.json; it is never estimated.
 """
 from __future__ import annotations
 
@@ -37,13 +40,16 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from models import (CATEGORIES, Observation, category_for_resource, extract_identifiers,
-                    normalize_identifier, parse_ts)
+from models import (CATEGORIES, STATES, Observation, category_for_resource,
+                    extract_identifiers, normalize_identifier, parse_ts)
 from parsers.activity import RID_RE
-from parsers.common import RESULT_STATES, SYSTEM_FOR_CATEGORY
+from parsers.common import SYSTEM_FOR_CATEGORY
 from parsers.manifest import EvidenceFile
 
-CACHE_DIR = Path(__file__).resolve().parent / "multimodal_cache"
+CODE_DIR = Path(__file__).resolve().parent
+CACHE_DIR = CODE_DIR / ".cache" / "multimodal"          # API results (gitignored)
+MANUAL_DIR = CODE_DIR / "multimodal_manual"             # committed manual transcriptions
+USAGE_PATH = CODE_DIR / ".cache" / "multimodal_usage.json"
 PROMPT_VERSION = "v1"
 DEFAULT_MODEL = "claude-opus-5-5"
 
@@ -55,6 +61,7 @@ RECORD_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
+                    "resource_id": {"type": "string"},
                     "keys": {"type": "array", "items": {"type": "string"}},
                     "system_id": {"type": "string"},
                     "category": {"type": "string"},
@@ -63,7 +70,7 @@ RECORD_SCHEMA = {
                     "observed_at": {"type": "string"},
                     "notes": {"type": "string"},
                 },
-                "required": ["keys", "system_id", "category", "state", "identifiers",
+                "required": ["resource_id", "keys", "system_id", "category", "state", "identifiers",
                              "observed_at", "notes"],
                 "additionalProperties": False,
             },
@@ -78,7 +85,9 @@ List every record the screen shows that has its own reference (a resource id suc
 account_123 / search_45 / backup_9 / data_flow_7 / export_12 / support_3 / audit_record_8 /
 marketing_1 / analytics_5, a file name, a statement number, or a customer key).
 For each record return:
-- keys: every reference shown for that record, exactly as displayed
+- resource_id: the record's resource id if one is shown (e.g. export_1260), else ""
+- keys: every other reference shown for that record (file name, statement number,
+  ticket number, customer key), exactly as displayed
 - system_id: the owning system (e.g. account_service, search_service, analytics_platform,
   support_platform, export_service, integration_service, backup_service, security_service,
   identity_service, marketing_platform, object_storage)
@@ -94,11 +103,20 @@ Transcribe only what is visible. Do not infer records that are not shown."""
 
 # ------------------------------------------------------------------ entry
 def multimodal_observations(files: list[EvidenceFile],
-                            aliases: dict[str, tuple[str, str]] | None = None,
+                            aliases=None,
                             cache_dir: Path = CACHE_DIR,
-                            log=sys.stderr) -> list[Observation]:
-    """Observations for the image/PDF evidence files skipped by load_evidence."""
+                            log=sys.stderr,
+                            manual_dir: Path = MANUAL_DIR,
+                            usage_path: Path | None = None) -> list[Observation]:
+    """Observations for the image/PDF evidence files skipped by load_evidence.
+
+    aliases: the catalog alias map (parsers.activity.resource_aliases), or the
+    dataset directory, from which it is built (the main.py hook passes that)."""
+    if isinstance(aliases, (str, Path)):
+        from parsers.activity import parse_activity, resource_aliases
+        aliases = resource_aliases(parse_activity(Path(aliases))[0])
     aliases = aliases or {}
+    usage_path = usage_path or (USAGE_PATH if cache_dir == CACHE_DIR else cache_dir / "usage.json")
     cache_dir.mkdir(parents=True, exist_ok=True)
     usage_calls: list[dict] = []
     cached: list[dict] = []
@@ -114,20 +132,20 @@ def multimodal_observations(files: list[EvidenceFile],
         if ev.kind not in ("png", "jpg", "jpeg", "pdf"):
             skipped.append({"file_id": ev.file_id, "reason": f"unsupported type {ev.kind}"})
             continue
-        entry = _cached_entry(ev, cache_dir)
+        entry = _cached_entry(ev, cache_dir, manual_dir)
         if entry is None:
             entry = _call_vision(ev, cache_dir, usage_calls, log)
         if entry is None:
             skipped.append({"file_id": ev.file_id, "reason": "no cache entry and no API key"})
             print(f"multimodal: WARNING {ev.file_id} ({ev.rel_path}) not processed: "
-                  "no cache entry and ANTHROPIC_API_KEY is not set", file=log)
+                  "no cached result and ANTHROPIC_API_KEY is not set", file=log)
             continue
         cached.append({"file_id": ev.file_id, "method": entry["extractor"]["method"],
                        "model": entry["extractor"].get("model"),
                        "usage": entry.get("usage")})
         out += records_to_observations(ev, entry["records"], aliases, log)
     if files:   # a run with no image/PDF input must not overwrite the last real report
-        _write_usage(cache_dir, usage_calls, cached, skipped)
+        _write_usage(usage_path, usage_calls, cached, skipped)
     return out
 
 
@@ -192,27 +210,32 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _cache_key(path: Path, model: str) -> str:
+    """sha256(file bytes + model + prompt version)."""
+    h = hashlib.sha256(path.read_bytes())
+    h.update(f"\x00{model}\x00{PROMPT_VERSION}".encode())
+    return h.hexdigest()
+
+
 def _model() -> str:
     return os.environ.get("MULTIMODAL_MODEL", DEFAULT_MODEL)
 
 
-def _cached_entry(ev: EvidenceFile, cache_dir: Path) -> dict | None:
-    """API entry for the current model + prompt version, else (if allowed) a
-    manual transcription of the same file bytes."""
+def _cached_entry(ev: EvidenceFile, cache_dir: Path, manual_dir: Path) -> dict | None:
+    """API result for the current model + prompt version; else (if allowed) a
+    committed manual transcription of the same file bytes."""
+    p = cache_dir / f"{_cache_key(ev.path, _model())}.json"
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    if os.environ.get("MULTIMODAL_ALLOW_MANUAL", "1") == "0" or not manual_dir.exists():
+        return None
     sha = _sha256(ev.path)
-    allow_manual = os.environ.get("MULTIMODAL_ALLOW_MANUAL", "1") != "0"
-    candidates = []
-    for p in sorted(cache_dir.glob(f"{sha[:16]}__*.json")):
-        entry = json.loads(p.read_text(encoding="utf-8"))
-        if entry.get("file_sha256") != sha:
-            continue
-        x = entry.get("extractor", {})
-        if x.get("method") == "api" and x.get("model") == _model() \
-                and x.get("prompt_version") == PROMPT_VERSION:
+    for m in sorted(manual_dir.glob(f"{sha[:16]}__*.json")):
+        entry = json.loads(m.read_text(encoding="utf-8"))
+        if entry.get("file_sha256") == sha and \
+                entry.get("extractor", {}).get("method") == "manual_transcription":
             return entry
-        if x.get("method") == "manual_transcription" and allow_manual:
-            candidates.append(entry)
-    return candidates[0] if candidates else None
+    return None
 
 
 def _call_vision(ev: EvidenceFile, cache_dir: Path, usage_calls: list, log) -> dict | None:
@@ -252,7 +275,7 @@ def _call_vision(ev: EvidenceFile, cache_dir: Path, usage_calls: list, log) -> d
                            "prompt_version": PROMPT_VERSION},
              "usage": {"input_tokens": call["input_tokens"], "output_tokens": call["output_tokens"]},
              "records": records}
-    path = cache_dir / f"{entry['file_sha256'][:16]}__api_{model}_{PROMPT_VERSION}.json"
+    path = cache_dir / f"{_cache_key(ev.path, model)}.json"
     path.write_text(json.dumps(entry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return entry
 
@@ -265,13 +288,14 @@ def records_to_observations(ev: EvidenceFile, records: list[dict],
     named explicitly, are dropped with a warning."""
     out = []
     for i, r in enumerate(records):
-        rid, system = _resolve(r.get("keys") or [], aliases)
+        rid, system = _resolve(([r["resource_id"]] if r.get("resource_id") else []) + list(r.get("keys") or []),
+                               aliases)
         state = str(r.get("state", "")).upper()
         cat = str(r.get("category", "")).upper() or None
         problem = None
         if rid is None:
             problem = f"no resource id or catalog alias in keys {r.get('keys')}"
-        elif state not in RESULT_STATES:
+        elif state not in STATES:
             problem = f"invalid state {state!r}"
         elif cat is not None and cat not in CATEGORIES:
             problem = f"invalid category {cat!r}"
@@ -307,7 +331,7 @@ def _resolve(keys: list[str], aliases: dict[str, tuple[str, str]]) -> tuple[str 
     return None, None
 
 
-def _write_usage(cache_dir: Path, calls: list, used: list, skipped: list) -> None:
+def _write_usage(path: Path, calls: list, used: list, skipped: list) -> None:
     report = {
         "run_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "api_calls_this_run": calls,
@@ -317,5 +341,5 @@ def _write_usage(cache_dir: Path, calls: list, used: list, skipped: list) -> Non
         "files_used": used,
         "files_skipped": skipped,
     }
-    (cache_dir / "usage.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n",
-                                          encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

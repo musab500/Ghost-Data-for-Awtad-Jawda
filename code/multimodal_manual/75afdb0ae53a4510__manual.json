@@ -16,11 +16,10 @@
         "g.silva76@gmail.com",
         "user_13"
       ],
-      "keys": [
-        "search_428"
-      ],
+      "keys": [],
       "notes": "customer_directory_v3 document, display name Gabriel Silva, indexed 2026-09-01T05:58:21Z.",
       "observed_at": "2026-09-01T05:58:21Z",
+      "resource_id": "search_428",
       "state": "FOUND",
       "system_id": "search_service"
     },
@@ -29,11 +28,10 @@
       "identifiers": [
         "g.silva76.jr@gmail.com"
       ],
-      "keys": [
-        "search_1874"
-      ],
+      "keys": [],
       "notes": "Second hit with a different email, no display name or customer reference.",
       "observed_at": "2026-09-01T05:55:03Z",
+      "resource_id": "search_1874",
       "state": "FOUND",
       "system_id": "search_service"
     }

@@ -157,13 +157,17 @@ its `expected_output.csv`. The format is described in that folder's README.
   * The key is read from `ANTHROPIC_API_KEY` only.
   * Each result is validated: state and category must be in the allowed
     vocabularies, and every record must name a resource id or an alias.
-  * Results are cached in `code/multimodal_cache/` under
-    `<sha16>__api_<model>_<prompt>.json`.
-* **Usage:** every run writes `code/multimodal_cache/usage.json`. It holds the
+  * Results are cached in `code/.cache/multimodal/<sha256(file bytes + model +
+    prompt version)>.json` (gitignored), so re-runs make zero calls.
+* **Usage:** every run writes `code/.cache/multimodal_usage.json`. It holds the
   real API calls of that run (served model, input and output tokens, stop
-  reason) and how each file was satisfied.
+  reason) and how each file was satisfied. `usage_report.md` should read it.
+* **Hook:** `main.py`'s `_load_multimodal` calls
+  `multimodal_observations(skipped, dataset_dir)`. Given a directory, the
+  function builds the catalog alias map from that dataset's activity file.
 * **No API key in this environment.** The 11 PNGs are therefore covered by
-  cache entries marked `"method": "manual_transcription"`. This Claude Code
+  committed transcriptions in `code/multimodal_manual/`, marked
+  `"method": "manual_transcription"`. This Claude Code
   session (claude-opus-5-5) viewed each screenshot with its image reader and
   transcribed it into the same record schema. These were **not API calls**, so
   token usage is recorded as `null`, not estimated. To replace them, run with
@@ -175,6 +179,24 @@ its `expected_output.csv`. The format is described in that folder's README.
   `security_audit_explorer` shows six audit records for user_03
   (audit_record_001–006), and all six are emitted. All of them are within
   retention, so case_45 verifies all six.
+
+### Pending change in Person B's files: `tools/patches/person_b_integration.patch`
+
+`git apply tools/patches/person_b_integration.patch` makes two changes:
+1. **`code/main.py` passes the per-person request windows to `direct_links`**,
+   as `(previous request's audit_at, this audit_at, has a later request)`.
+   Without them, image/PDF evidence about one request of a person leaks into
+   their other request (e.g. leonie: case_46 March / case_17 August).
+2. **`code/evaluation/main.py`'s baseline guard uses `>=` instead of `==`.** It
+   asserted `status == 31`, so the improvement to 32/32 crashed it.
+
+Measured through Person B's `evaluate_samples` on the 32 samples:
+
+| State | Status | Exact | P | R | F1 | Field acc. |
+|---|---|---|---|---|---|---|
+| main before multimodal | 31/32 | 24/32 | 0.973 | 0.943 | 0.958 | 0.946 |
+| + multimodal.py (this branch, patch not applied) | 32/32 | 23/32 | 0.959 | 0.964 | 0.961 | 0.934 |
+| + patch applied | **32/32** | **25/32** | **0.979** | **0.964** | **0.971** | **0.966** |
 
 ### Classifier cross-check (CLASSIFY_REQUEST)
 

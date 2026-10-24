@@ -6,5 +6,4 @@ code.zip
 .cache/
 person-a.zip
 ghost-data.bundle
-code/multimodal_cache/usage.json
 *.bundle
