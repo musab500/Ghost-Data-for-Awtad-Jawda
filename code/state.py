@@ -379,3 +379,16 @@ def _hungarian(cost: list[list[float]]) -> list[int]:
         if p[j]:
             assign[p[j] - 1] = j - 1
     return assign
+
+
+def flagged_cases(direct_by_case: dict[str, dict[str, list[str]]],
+                  flags: dict[str, ActivityEvent]) -> dict[str, str]:
+    """{case_id: activity_id} for cases whose directly linked account was
+    flagged non-deletion by CLASSIFY_REQUEST (see parsers.activity.
+    non_deletion_flags). For cross-checking the classifier only."""
+    out = {}
+    for case_id, links in sorted(direct_by_case.items()):
+        for rid in sorted(links):
+            if rid in flags:
+                out[case_id] = flags[rid].activity_id
+    return out

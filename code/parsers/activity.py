@@ -68,3 +68,11 @@ def parse_activity(dataset_dir: Path) -> tuple[list[ActivityEvent], list[Observa
                     source_kind="activity", raw=dict(r),
                     captured_at=r["event_time"], location="system_activity.csv"))
     return events, obs, links
+
+
+def non_deletion_flags(events: list[ActivityEvent]) -> dict[str, ActivityEvent]:
+    """{account resource_id: CLASSIFY_REQUEST event} for requests the privacy
+    intake classified as non-deletion. This is a workflow claim: use it only
+    to cross-check the request classifier, never as the decision itself."""
+    return {e.resource_id: e for e in events
+            if e.event_type == "CLASSIFY_REQUEST" and "non-deletion" in e.details.lower()}

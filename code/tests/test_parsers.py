@@ -140,6 +140,17 @@ class Units(unittest.TestCase):
         self.assertFalse([o for o in obs if o.resource_id == "account_001"])
         self.assertTrue(all(o.state in ("ACTIVE", "DISABLED", "BLOCKED") for o in obs))
 
+    def test_non_deletion_flags_cross_check_helper(self):
+        from parsers.activity import non_deletion_flags
+        from state import flagged_cases
+        events, _obs, _links = parse_activity(DATASET)
+        flags = non_deletion_flags(events)
+        self.assertEqual(len(flags), 10)
+        self.assertTrue(all(r.startswith("account_") for r in flags))
+        some = next(iter(sorted(flags)))
+        out = flagged_cases({"c1": {some: ["identifier:x"]}, "c2": {"account_x": []}}, flags)
+        self.assertEqual(out, {"c1": flags[some].activity_id})
+
     def test_invalid_state_rejected(self):
         with self.assertRaises(ValueError):
             Observation("r", "s", None, "MAYBE", set(), "2026-01-01T00:00:00Z", "e", "sql")
