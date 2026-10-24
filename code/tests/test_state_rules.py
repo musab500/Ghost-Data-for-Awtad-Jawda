@@ -141,6 +141,21 @@ class Linking(unittest.TestCase):
         self.assertEqual(set(out["c_ok"]), {"account_2"})
         self.assertEqual(set(out["c_ns"]), {"account_1"})
 
+    def test_complete_case_prefers_resource_with_citable_evidence(self):
+        # Same reported_at, same status, equal timing scores: the case expected
+        # to be COMPLETE takes the account with an explicit observation, the
+        # INCOMPLETE one takes the account only known from activity.
+        events = [self.ev("a1", "2026-09-05T11:00:00Z", "DELETE_RECORD", "account_service", "account_noev", "FAILED"),
+                  self.ev("a2", "2026-09-05T11:00:00Z", "DELETE_RECORD", "account_service", "account_ev", "FAILED")]
+        idx = EvidenceIndex([ob("account_ev", "account_service", "USER_PROFILE", "NOT_FOUND",
+                                "2026-09-10T00:00:00Z", "evidence_x")], [], [], events)
+        windows = [CaseWindow("c_a_incomplete", "2026-09-05T12:00:00Z", AUDIT, set(), "NOT_STARTED", False),
+                   CaseWindow("c_b_complete", "2026-09-05T12:00:00Z", AUDIT, set(), "NOT_STARTED", True)]
+        out = idx.assign_workflow(windows)
+        self.assertEqual(set(out["c_b_complete"]), {"account_ev"})
+        self.assertEqual(set(out["c_a_incomplete"]), {"account_noev"})
+        self.assertEqual((idx.evidence_tier("account_ev", AUDIT), idx.evidence_tier("account_noev", AUDIT)), (0, 2))
+
     def test_resource_with_someone_elses_identifier_is_not_assigned(self):
         events = [self.ev("a1", "2026-09-05T11:40:00Z", "ANONYMIZE_RECORD", "analytics_platform", "analytics_1")]
         idx = EvidenceIndex([ob("analytics_1", "analytics_platform", "ANALYTICS_PROFILE", "IDENTIFIABLE",

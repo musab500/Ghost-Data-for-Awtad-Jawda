@@ -41,6 +41,9 @@ SCOPE_ABSENCE_CATEGORIES = {"USER_PROFILE", "SEARCH_INDEX_ENTRY", "USER_EXPORT",
 STATUS_TO_ACCOUNT_RESULT = {"COMPLETE": "SUCCESS", "PARTIALLY_COMPLETE": "PARTIAL",
                             "NOT_STARTED": "FAILED"}
 STATUS_MISMATCH_PENALTY = 45.0
+# Extra cost for a case expected to be COMPLETE, by the candidate's evidence
+# tier at audit_at (0 explicit observation, 1 snapshot omission only, 2 none).
+CITATION_TIER_PENALTY = (0.0, 5.0, 20.0)
 # Where a case's own workflow actions sit relative to its reported_at
 # (minutes): the primary-profile deletion is submitted first, policy actions
 # on identifier-less copies (anonymise, redact, disable, block) follow just
@@ -62,6 +65,10 @@ class CaseWindow:
     audit_at: str
     direct_categories: set[str | None] = field(default_factory=set)
     reported_status: str = ""
+    # True when every directly linked resource is already compliant, i.e. the
+    # case is expected to be COMPLETE and its verification steps must cite
+    # evidence. Such cases prefer candidates with stronger citable evidence.
+    expects_complete: bool = False
 
 
 @dataclass
@@ -148,9 +155,14 @@ class EvidenceIndex:
         primary-profile deletion, POLICY_WINDOW for other actions) and not
         after audit_at. Each resource goes to at most one case, and each case
         receives at most one resource per category, none for a category it
-        already has a directly linked resource for. Candidates are ranked by
+        already has a directly linked resource for. The assignment is a
+        minimum-cost bipartite matching (per category). Candidate cost is
         distance from the expected slot, plus a penalty when an account
-        deletion's reported_result disagrees with the case's reported_status.
+        deletion's reported_result disagrees with the case's reported_status,
+        plus, for a case expected to be COMPLETE, a cost for candidates whose
+        state at audit_at is only weakly citable (see evidence_tier): such a
+        case must cite proof for every verification step, while an INCOMPLETE
+        case's verification steps are future checks with no citation.
 
         Returns {case_id: {resource_id: reason}}."""
         cand = []
@@ -177,20 +189,18 @@ class EvidenceIndex:
                 if (is_account and c.reported_status in STATUS_TO_ACCOUNT_RESULT
                         and e.reported_result != STATUS_TO_ACCOUNT_RESULT[c.reported_status]):
                     score += STATUS_MISMATCH_PENALTY
+                if c.expects_complete:
+                    score += CITATION_TIER_PENALTY[self.evidence_tier(e.resource_id, c.audit_at)]
                 cand.append((score, c.case_id, e.resource_id, cat, e.activity_id))
-        cand.sort()
-        taken_rid: set[str] = set()
-        taken_cat: set[tuple[str, str | None]] = set()
-        out: dict[str, dict[str, str]] = defaultdict(dict)
-        for _score, case_id, rid, cat, aid in cand:
-            if rid in out[case_id]:
-                continue
-            if rid in taken_rid or (case_id, cat) in taken_cat:
-                continue
-            taken_rid.add(rid)
-            taken_cat.add((case_id, cat))
-            out[case_id][rid] = f"workflow:{aid}"
-        return dict(out)
+        return _min_cost_assignment(cand)
+
+    def evidence_tier(self, rid: str, audit_at: str) -> int:
+        """How the resource's state at audit_at can be cited:
+        0 = explicit observation, 1 = only a snapshot that omits it, 2 = none."""
+        rs = self.state_at(rid, audit_at)
+        if rs.state is None:
+            return 2
+        return 1 if "scope" in rs.raw else 0
 
     # --------------------------------------------------------------- state
     def state_at(self, rid: str, audit_at: str) -> ResourceState:
@@ -251,3 +261,94 @@ def _best_category(obs, rid: str) -> str | None:
         return sorted(special)[0]
     return cats[0] if cats else prefix_cat
 
+
+
+UNASSIGNED_COST = 1e4      # leaving a case/resource unmatched
+IMPOSSIBLE_COST = 1e9      # pair is not a candidate
+
+
+def _min_cost_assignment(cand) -> dict[str, dict[str, str]]:
+    """cand: [(cost, case_id, resource_id, category, activity_id)].
+    Within each category, match cases to resources one-to-one, maximising the
+    number of matches and then minimising total cost (Hungarian algorithm on
+    each connected group of competing cases/resources)."""
+    best: dict[tuple, tuple] = {}
+    for cost, case_id, rid, cat, aid in cand:
+        k = (cat, case_id, rid)
+        if k not in best or (cost, aid) < best[k]:
+            best[k] = (cost, aid)
+    out: dict[str, dict[str, str]] = defaultdict(dict)
+    by_cat: dict = defaultdict(list)
+    for (cat, case_id, rid), (cost, aid) in best.items():
+        by_cat[cat].append((case_id, rid, cost, aid))
+    for cat in sorted(by_cat, key=str):
+        edges = by_cat[cat]
+        parent: dict = {}
+
+        def find(x):
+            while parent.setdefault(x, x) != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        for case_id, rid, _c, _a in edges:
+            parent[find(("c", case_id))] = find(("r", rid))
+        groups: dict = defaultdict(list)
+        for e in edges:
+            groups[find(("c", e[0]))].append(e)
+        for g in sorted(groups.values(), key=lambda es: min(es)):
+            cases = sorted({e[0] for e in g})
+            rids = sorted({e[1] for e in g})
+            n = max(len(cases), len(rids))
+            m = [[UNASSIGNED_COST] * n for _ in range(n)]
+            for i in range(len(cases)):
+                for j in range(len(rids)):
+                    m[i][j] = IMPOSSIBLE_COST
+            lookup = {}
+            for case_id, rid, cost, aid in g:
+                i, j = cases.index(case_id), rids.index(rid)
+                m[i][j] = cost
+                lookup[(i, j)] = aid
+            for i, j in enumerate(_hungarian(m)):
+                if i < len(cases) and j < len(rids) and (i, j) in lookup:
+                    out[cases[i]][rids[j]] = f"workflow:{lookup[(i, j)]}"
+    return dict(out)
+
+
+def _hungarian(cost: list[list[float]]) -> list[int]:
+    """Minimum-cost perfect matching on a square matrix; returns the column
+    assigned to each row (Kuhn-Munkres with potentials, O(n^3))."""
+    n = len(cost)
+    INF = float("inf")
+    u, v = [0.0] * (n + 1), [0.0] * (n + 1)
+    p, way = [0] * (n + 1), [0] * (n + 1)
+    for i in range(1, n + 1):
+        p[0], j0 = i, 0
+        minv, used = [INF] * (n + 1), [False] * (n + 1)
+        while True:
+            used[j0] = True
+            i0, delta, j1 = p[j0], INF, 0
+            for j in range(1, n + 1):
+                if not used[j]:
+                    cur = cost[i0 - 1][j - 1] - u[i0] - v[j]
+                    if cur < minv[j]:
+                        minv[j], way[j] = cur, j0
+                    if minv[j] < delta:
+                        delta, j1 = minv[j], j
+            for j in range(n + 1):
+                if used[j]:
+                    u[p[j]] += delta
+                    v[j] -= delta
+                else:
+                    minv[j] -= delta
+            j0 = j1
+            if p[j0] == 0:
+                break
+        while j0:
+            j1 = way[j0]
+            p[j0] = p[j1]
+            j0 = j1
+    assign = [0] * n
+    for j in range(1, n + 1):
+        if p[j]:
+            assign[p[j] - 1] = j - 1
+    return assign
