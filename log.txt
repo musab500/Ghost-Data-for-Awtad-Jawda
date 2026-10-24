@@ -9,3 +9,25 @@ Parent Agent: none
 Language: py
 Time Remaining: not configured
 
+## [2026-10-24T21:52:30Z] Person A: shared models + SQL/JSON/TXT/log/activity parsers
+
+User Prompt (verbatim, secrets redacted):
+[Uploaded hackerrank-orchestrate-october26-main.zip] MASTER EXECUTION PROMPT — HACKERRANK ORCHESTRATE OCTOBER 2026 / Project: Ghost Data Still Exists ... [long prompt truncated here for length; it is in full in the Claude Code session trace. It covers the initial inspection procedure, output contract, hybrid architecture, evaluation and deliverables, plus PART 2 verified project context.] Role line kept: "I am Person A. Start with code/models.py, then code/parsers/sql.py and code/parsers/json_records.py, producing Observation records. Validate by checking that every resource in sample case_11's expected output is found and linked to user_32." "Start now: briefly verify the facts above against the repo, then begin coding your part."
+
+Agent Response Summary:
+Extracted the repository, read AGENTS.md, problem_statement.md and the trace instructions, and checked the team's findings against the data. Implemented code/models.py (Observation, Identity, Scope, ResourceLink, ActivityEvent, identifier normalisers) and parsers for SQL snapshots, JSON records, the TXT handover, all 7 log layouts and system_activity.csv. All 6 case_11 resources are found and linked to user_32 through evidence_03. Two findings matter for the design: absence is proven by omission from scoped snapshots, and some evidence links people only through historical email hashes. Both are documented in code/parsers/NOTES.md.
+
+Actions:
+* Initialised git (main = starter import), branch person-a
+* Created code/models.py, code/parsers/{__init__,common,manifest,sql,json_records,txt,logs,activity}.py, code/parsers/NOTES.md
+* Created code/tests/test_parsers.py; python3 -m unittest discover -s code/tests -> 14 tests OK
+* Commit 3383b09 on person-a
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
