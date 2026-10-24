@@ -1,0 +1,103 @@
+{
+  "extractor": {
+    "method": "manual_transcription",
+    "model": "claude-opus-5-5 (Claude Code session; screenshot viewed with the Read tool)",
+    "note": "Not an API call: no ANTHROPIC_API_KEY was available. Token usage is not measurable and is recorded as null. Replace by running with ANTHROPIC_API_KEY set and MULTIMODAL_ALLOW_MANUAL=0.",
+    "prompt_version": "manual-1",
+    "transcribed_at": "2026-10-24"
+  },
+  "file_id": "evidence_46",
+  "file_path": "evidence/images/object_storage_browser_20260213.png",
+  "file_sha256": "96e9a191380c29b9e0ab997007268c4cd6353cb6721ebd1ed4a32599d8d37e04",
+  "records": [
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "delivery_confirmation_19.pdf"
+      ],
+      "notes": "Object in northstar-customer-data/support-attachments/2026/02, v3, uploader support-service, modified 12 Feb 18:42 UTC.",
+      "observed_at": "2026-02-12T18:42:00Z",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "delivery_confirmation_20.pdf"
+      ],
+      "notes": "Other object in the same prefix.",
+      "observed_at": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "return_label_4821.pdf"
+      ],
+      "notes": "Other object in the same prefix.",
+      "observed_at": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "return_label_4876.pdf"
+      ],
+      "notes": "Other object in the same prefix.",
+      "observed_at": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "invoice_NS-10493.pdf"
+      ],
+      "notes": "Other object in the same prefix.",
+      "observed_at": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "parcel_damage_7713.jpg"
+      ],
+      "notes": "Other object in the same prefix.",
+      "observed_at": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [],
+      "keys": [
+        "customer_export_2026-02-10.zip"
+      ],
+      "notes": "Other object in the same prefix.",
+      "observed_at": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [],
+      "keys": [
+        "customer_export_2026-02-12.zip"
+      ],
+      "notes": "Other object in the same prefix.",
+      "observed_at": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    }
+  ],
+  "usage": null
+}

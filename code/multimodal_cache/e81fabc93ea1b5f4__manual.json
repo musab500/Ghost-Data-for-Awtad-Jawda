@@ -1,0 +1,41 @@
+{
+  "extractor": {
+    "method": "manual_transcription",
+    "model": "claude-opus-5-5 (Claude Code session; screenshot viewed with the Read tool)",
+    "note": "Not an API call: no ANTHROPIC_API_KEY was available. Token usage is not measurable and is recorded as null. Replace by running with ANTHROPIC_API_KEY set and MULTIMODAL_ALLOW_MANUAL=0.",
+    "prompt_version": "manual-1",
+    "transcribed_at": "2026-10-24"
+  },
+  "file_id": "evidence_14",
+  "file_path": "evidence/images/connector_management_console_20260807.png",
+  "file_sha256": "e81fabc93ea1b5f4c918d934cdb2bea05d61737adfcc29f281494f5d8ec46355",
+  "records": [
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [
+        "jain.aditi@gmail.com"
+      ],
+      "keys": [
+        "data_flow_1121"
+      ],
+      "notes": "Healthy continuous sync to customer_analytics_warehouse; 124 events delivered 07:59:42.",
+      "observed_at": "2026-08-07T07:59:42Z",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    },
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [
+        "lucia-torres@gmail.com"
+      ],
+      "keys": [
+        "data_flow_9846"
+      ],
+      "notes": "Continuous sync to customer_analytics_warehouse, 842 events/hour.",
+      "observed_at": "2026-08-07T07:59:36Z",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    }
+  ],
+  "usage": null
+}

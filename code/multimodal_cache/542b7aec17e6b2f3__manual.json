@@ -1,0 +1,29 @@
+{
+  "extractor": {
+    "method": "manual_transcription",
+    "model": "claude-opus-5-5 (Claude Code session; screenshot viewed with the Read tool)",
+    "note": "Not an API call: no ANTHROPIC_API_KEY was available. Token usage is not measurable and is recorded as null. Replace by running with ANTHROPIC_API_KEY set and MULTIMODAL_ALLOW_MANUAL=0.",
+    "prompt_version": "manual-1",
+    "transcribed_at": "2026-10-24"
+  },
+  "file_id": "evidence_28",
+  "file_path": "evidence/images/support_ticket_console_20260524.png",
+  "file_sha256": "542b7aec17e6b2f38827896e7eb52c70e4bfaaca22433621be1f80f54884e944",
+  "records": [
+    {
+      "category": "SUPPORT_MESSAGE",
+      "identifiers": [
+        "kagyeman8947@fastmail.com"
+      ],
+      "keys": [
+        "support_1034",
+        "CS-5034"
+      ],
+      "notes": "Ticket 'Where is my delivery?' for Kofi Agyeman; customer name and email shown; order ORD-20265034.",
+      "observed_at": "2026-05-24T07:00:00Z",
+      "state": "IDENTIFIABLE",
+      "system_id": "support_platform"
+    }
+  ],
+  "usage": null
+}

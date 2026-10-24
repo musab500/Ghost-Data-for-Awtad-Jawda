@@ -14,8 +14,12 @@ from state import EvidenceIndex, CaseWindow
 from rules import load_rules, decide, OPERATION_ORDER, OP_STATE
 
 ds = repo / "dataset"
-obs, scopes, _ = load_evidence(ds)
+obs, scopes, skipped = load_evidence(ds)
 events, aobs, links = parse_activity(ds)
+from parsers.activity import resource_aliases
+from multimodal import multimodal_observations
+import io
+obs += multimodal_observations(skipped, resource_aliases(events), log=io.StringIO())
 idx = EvidenceIndex(obs + aobs, scopes, links, events)
 rules = load_rules(ds)
 
@@ -42,9 +46,18 @@ for uid, p in people.items():
 ALL = list(csv.DictReader(open(ds / "sample_deletion_requests.csv"))) + list(csv.DictReader(open(ds / "deletion_requests.csv")))
 assert len({r["case_id"] for r in ALL}) == len(ALL)
 DIRECT = {}
+from models import parse_ts as _pt
+_prev = {}   # case_id -> audit_at of the same person's previous request
+_by_user = defaultdict(list)
+for r in ALL:
+    _by_user[by_email.get(norm_email(r["email"]))].append(r)
+for uid, rs in _by_user.items():
+    rs = sorted(rs, key=lambda r: _pt(r["audit_at"]))
+    for a, b in zip(rs, rs[1:]):
+        _prev[b["case_id"]] = a["audit_at"]
 for r in ALL:
     uid = by_email.get(norm_email(r["email"]))
-    DIRECT[r["case_id"]] = idx.direct_links(people[uid]) if uid else {}
+    DIRECT[r["case_id"]] = idx.direct_links(people[uid], _prev.get(r["case_id"]), r["audit_at"]) if uid else {}
 def expects_complete(r):
     decs = [decide(idx.state_at(x, r["audit_at"]), rules, r["audit_at"]) for x in DIRECT[r["case_id"]]]
     return not any(d and d.violates for d in decs)

@@ -72,9 +72,13 @@ load_evidence(dataset_dir: Path) -> tuple[list[Observation], list[Scope], list[E
 # parsers/activity.py
 parse_activity(dataset_dir: Path) -> tuple[list[ActivityEvent], list[Observation], list[ResourceLink]]
 non_deletion_flags(events) -> dict[str, ActivityEvent]       # account_id -> CLASSIFY_REQUEST row
+resource_aliases(events) -> dict[str, tuple[str, str]]        # business key -> (resource_id, system_id)
+# multimodal.py
+multimodal_observations(skipped_files, aliases, cache_dir=CACHE_DIR, log=sys.stderr) -> list[Observation]
 # state.py
 EvidenceIndex(observations, scopes, links=(), events=())
-    .direct_links(identity: Identity) -> dict[str, list[str]]  # resource_id -> reasons
+    .direct_links(identity: Identity, not_before: str | None, audit_at: str | None)
+        -> dict[str, list[str]]  # resource_id -> reasons; not_before = audit_at of the person's previous request
     .category_of(resource_id) -> str | None
     .assign_workflow(cases: list[CaseWindow]) -> dict[str, dict[str, str]]  # case_id -> {rid: reason}
     .state_at(resource_id, audit_at) -> ResourceState
@@ -97,13 +101,17 @@ models.py. identity.py must include the following (see finding 1 above):
 
 ### Order of calls in main.py
 
-1. `obs, scopes, skipped = load_evidence(ds)`, then
-   `obs += multimodal_observations(skipped)`.
-2. `events, act_obs, links = parse_activity(ds)`.
+1. `obs, scopes, skipped = load_evidence(ds)`.
+2. `events, act_obs, links = parse_activity(ds)`, then
+   `obs += multimodal_observations(skipped, resource_aliases(events))`.
 3. `idx = EvidenceIndex(obs + act_obs, scopes, links, events)`, built once.
    `rules = load_rules(ds)`.
 4. Resolve an `Identity` for **every** request, samples and evaluation together.
-   Then compute `direct[c] = idx.direct_links(identity)`.
+   Then compute `direct[c] = idx.direct_links(identity, prev_audit[c], audit_at)`.
+   Here `prev_audit[c]` is the audit_at of the same person's previous request,
+   ordered by audit_at, or None. Some people have two requests (e.g.
+   case_46 / case_17). Evidence that predates the earlier request's audit
+   belongs to that request.
 5. For each case, compute
    `expects_complete = not any(decide(idx.state_at(r, audit), rules, audit).violates for r in direct[c])`.
    Skip None decisions.
@@ -126,36 +134,40 @@ models.py. identity.py must include the following (see finding 1 above):
 `tools/sample_harness.py` implements steps 1–8 with a stand-in identity
 resolver and no classifier. Use it as the reference wiring.
 
-### What multimodal.py must emit
+### multimodal.py (Person A owns it)
 
-Emit the same `Observation` type. Set `source_kind` to "pdf" or "image",
-`evidence_id` to the file_id, and `captured_at` to the manifest time. Put every
-identifier that appears in the file (emails, phones, user_ids) in
-`identifiers`, so that `direct_links` finds the record.
-
-* **PDFs are text, so no OCR or LLM is needed.** `pdftotext -layout` is
-  available in this environment and extracts them cleanly.
-* `documents/delivery_correction_attachment.pdf` (evidence_58) contains
-  `support_001`, `priya.raman@gmail.com`, a phone number and a file name.
-  Emit:
-  `Observation("support_001", "support_platform", "SUPPORT_ATTACHMENT", "FOUND", {priya.raman@gmail.com, +919876573142}, ..., "evidence_58", "pdf")`.
-  This makes case_07 INCOMPLETE: REPORT_REMAINING_RECORD, DELETE_RECORD,
-  VERIFY_RECORD_ABSENT, citing evidence_58.
-* `documents/security_retention_extract.pdf` (evidence_55) contains
-  `audit_record_003`, subject `user_03`, and "retain until 25 Aug 2027". Emit
-  SECURITY_AUDIT_LOG FOUND with `raw={"retention_until": "2027-08-25T04:03:00Z"}`.
-* `documents/legal_retention_register_20260529.pdf` names user_08, user_12,
-  user_17, user_21, user_24 and user_29, which suggests LEGAL_HOLD_RECORD rows.
-  `documents/account_history_report_20260718.pdf` names user_18.
-* **Correction to the earlier brief:** `images/security_audit_explorer_20260905.png`
-  shows **user_03's** events (audit_record_001–006), *not* audit_record_6645 or
-  audit_record_5569. Those two IDs occur in **no** participant file: no text,
-  PDF, activity row or the two images I viewed. See the known limitations below.
-* The images I viewed each describe a single hand-crafted user.
-  `account_admin_console_20260926.png` shows user_11, account_5762 and
-  support_9538. So the 11 PNGs mainly matter for the low-numbered "special"
-  users. No tesseract is installed, so the PNGs need a vision model, with
-  results cached as JSON.
+* **PDFs:** text comes from `pdftotext` (or `pypdf` as a fallback) and is
+  interpreted deterministically. A PDF goes to the vision model only if no text
+  can be extracted. One Observation is emitted per resource the document names,
+  either by explicit id or through a catalog alias (`resource_aliases`). A
+  `retain until` date becomes `raw.retention_until`.
+  * `legal_retention_register_20260529.pdf` lists order refs and user_ids but no
+    resource ids, so it emits **nothing**. This is consistent with the gold
+    answers for cases 08, 12, 17 and 21, none of which has a legal-hold step.
+* **PNGs:** one vision call per file through the `anthropic` SDK.
+  * Model: `MULTIMODAL_MODEL`, default `claude-opus-5-5`, called with the
+    server-side refusal fallback, effort low and a JSON-schema output format.
+  * The key is read from `ANTHROPIC_API_KEY` only.
+  * Each result is validated: state and category must be in the allowed
+    vocabularies, and every record must name a resource id or an alias.
+  * Results are cached in `code/multimodal_cache/` under
+    `<sha16>__api_<model>_<prompt>.json`.
+* **Usage:** every run writes `code/multimodal_cache/usage.json`. It holds the
+  real API calls of that run (served model, input and output tokens, stop
+  reason) and how each file was satisfied.
+* **No API key in this environment.** The 11 PNGs are therefore covered by
+  cache entries marked `"method": "manual_transcription"`. This Claude Code
+  session (claude-opus-5-5) viewed each screenshot with its image reader and
+  transcribed it into the same record schema. These were **not API calls**, so
+  token usage is recorded as `null`, not estimated. To replace them, run with
+  `ANTHROPIC_API_KEY` set and `MULTIMODAL_ALLOW_MANUAL=0`.
+* **For the usage report:** the final run makes 0 API calls if every file is
+  cached. Say that the screenshots were transcribed manually in the dev
+  session, with no measurable token usage.
+* **Faithful-extraction choices that could cost precision:**
+  `security_audit_explorer` shows six audit records for user_03
+  (audit_record_001–006), and all six are emitted. All of them are within
+  retention, so case_45 verifies all six.
 
 ### Classifier cross-check (CLASSIFY_REQUEST)
 

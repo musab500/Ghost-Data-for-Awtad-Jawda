@@ -76,3 +76,22 @@ def non_deletion_flags(events: list[ActivityEvent]) -> dict[str, ActivityEvent]:
     to cross-check the request classifier, never as the decision itself."""
     return {e.resource_id: e for e in events
             if e.event_type == "CLASSIFY_REQUEST" and "non-deletion" in e.details.lower()}
+
+
+ALIAS_RE = re.compile(r"(?:linked|confirmed)\s+(\S+)\s+\(([^)]+)\)")
+
+
+def resource_aliases(events: list[ActivityEvent]) -> dict[str, tuple[str, str]]:
+    """{alias (lower-case): (resource_id, system_id)} from data-catalog rows
+    such as "Data catalog linked export_1842 (NST-2026-0718-1842) to ...".
+    Lets business keys shown in documents and screenshots (statement numbers,
+    file names, customer keys) resolve to a resource id without guessing."""
+    out: dict[str, tuple[str, str]] = {}
+    for e in events:
+        if e.event_type != "LINK_RESOURCE_IDENTITY":
+            continue
+        for rid, alias in ALIAS_RE.findall(e.details):
+            alias = alias.strip().lower()
+            if alias and alias != rid.lower():
+                out[alias] = (rid, e.target_system)
+    return out
