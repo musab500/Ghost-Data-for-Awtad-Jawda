@@ -75,3 +75,24 @@ repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
 
+## [2026-10-24T22:17:05Z] Person A: evidence-aware workflow assignment + hand-off
+
+User Prompt (verbatim, secrets redacted):
+Continue as Person A. Current baseline on the 32 samples (verified by the team): status 31/32, exact sequence 20/32, step P=0.947, R=0.927. 29 unit tests pass. [...] Priority 1 — evidence-aware workflow assignment [...] Priority 2 — workflow window over/under-assignment [...] Priority 3 — hand-off to Person B [...] Rules [...] (full prompt in the session trace; abbreviated here for length)
+
+Agent Response Summary:
+P1: added an evidence-tier cost to assign_workflow (explicit observation < snapshot omission only < none; charged only to cases expected to be COMPLETE). The greedy matcher turned out to depend on case-id order, so it was replaced with a per-category Hungarian min-cost matching. P2: a diagnostic of candidate rows and competing windows showed a consistent workflow-run structure, so I added slot-occupancy, run-affinity and failed-run cost terms. The remaining mismatches (03/44, 27/28, 23, account_004, and two audit records present in no participant file) are documented as known limitations rather than fitted. P3: added the non_deletion_flags/flagged_cases cross-check helpers and wrote the integration contract and multimodal hand-off in NOTES.md, correcting the assumption that audit_record_6645/5569 are in the security PNG. Harness went from 20/32 exact, P .947, R .927 to 24/32 exact, P .973, R .943, with status still 31/32. 32 unit tests pass.
+
+Actions:
+* Edited code/state.py, code/parsers/activity.py, code/tests/test_state_rules.py, code/tests/test_parsers.py, code/parsers/NOTES.md, tools/sample_harness.py
+* Ran the harness and unit tests after each change; viewed 2 PNGs and ran pdftotext on 4 PDFs for the hand-off
+* Commits 380bba7, 3310eee and the hand-off commit on person-a
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
