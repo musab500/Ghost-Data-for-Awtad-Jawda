@@ -126,7 +126,8 @@ def multimodal_observations(files: list[EvidenceFile],
                        "model": entry["extractor"].get("model"),
                        "usage": entry.get("usage")})
         out += records_to_observations(ev, entry["records"], aliases, log)
-    _write_usage(cache_dir, usage_calls, cached, skipped)
+    if files:   # a run with no image/PDF input must not overwrite the last real report
+        _write_usage(cache_dir, usage_calls, cached, skipped)
     return out
 
 
