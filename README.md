@@ -155,3 +155,98 @@ Before submitting, confirm that:
 - `code.zip` includes your runnable code, `README.md`, `code/evaluation/evaluation_report.md`, and `code/evaluation/usage_report.md`;
 - `log.txt` follows the `AGENTS.md` turn format and is uploaded to the `chat_transcript` slot; and
 - no API keys, credentials, real personal data, or sensitive configuration values are included.
+
+---
+
+## Solution — Our Implementation
+
+An evidence-based deletion-audit agent with a **deterministic core** and a model
+used **only** for one task (request classification), with a deterministic
+fallback so the whole pipeline runs with no API key.
+
+### Setup
+
+```bash
+python3 --version              # developed on Python 3.13; standard library only
+# optional: unit tests use pytest
+python3 -m pip install pytest
+```
+
+No third-party runtime dependencies are required to produce `output.csv`. The
+optional LLM classifier uses the `anthropic` SDK if installed and a key is set.
+
+### Run
+
+```bash
+# Produce the submission output.csv (518 rows) at the repo root, then validate it:
+python3 code/main.py
+
+# Validate an existing output.csv without regenerating:
+python3 code/main.py --validate-only output.csv
+
+# Evaluate against the 32 public samples + team-authored cases:
+python3 code/evaluation/main.py
+
+# Unit tests (Person A's parser/state/rules suite):
+PYTHONPATH=code python3 -m pytest code/tests/ -q
+```
+
+### Environment variables (all optional, read from env only — never committed)
+
+| Variable | Effect |
+|---|---|
+| `ANTHROPIC_API_KEY` / `CLAUDE_API_KEY` | Enables the LLM request classifier. Unset → deterministic fallback (the mode used for the submitted `output.csv`). |
+| `GHOST_CLASSIFIER_MODEL` | Override the classifier model (default `claude-haiku-5-5`). |
+
+### Architecture
+
+```
+request ─► classifier.py ──not deletion──► NOT_APPLICABLE, []
+             │ (LLM optional + deterministic negation/intent fallback)
+             ▼ deletion
+         identity.py ─► Identity (current + historical emails/phones,
+             │           email hashes, sha256(lower(email)) of every email)
+             ▼
+         state.EvidenceIndex.direct_links ∪ assign_workflow   (Person A)
+             │   evidence from parsers/* (+ multimodal.py hook, Person A)
+             ▼
+         state.state_at(resource, audit_at)  ─►  rules.decide(...)   (Person A)
+             │   true state at the audit cutoff; reported statuses are claims
+             ▼
+         steps.assemble_steps  ─►  ordered findings → remediation → verification
+             ▼
+         main.write_output  ─►  output.csv  ─►  main.validate_output_file (loud)
+```
+
+Key properties:
+
+- **Identity** (`identity.py`): resolves 518/518 request emails (100 via the
+  audit log), including historical email-hash links such as `case_12`.
+- **Temporal correctness**: state is reconstructed strictly at `audit_at`;
+  evidence captured or observed later is never used (see the `temporal_cutoff`
+  custom case).
+- **Policy** (`rules.py`, Person A): DELETE / REDACT / ANONYMIZE / RETAIN /
+  tombstone and recreation paths (data flow, backup restore) from
+  `deletion_rules.csv`.
+- **Classifier** (`classifier.py`): deletion vs non-deletion; cached by
+  `sha256(text+model+prompt_version)`; cross-checked against the
+  `CLASSIFY_REQUEST` flags (10/10 agreement, used as a check only).
+- **Validation** (`main.validate_output_file`): independent structural re-check
+  of every output row; raises on any contract violation.
+
+### File ownership
+
+- **Person B (this work):** `code/identity.py`, `code/classifier.py`,
+  `code/steps.py`, `code/main.py`, `code/evaluation/main.py`,
+  `code/evaluation/custom_cases/*`, `code/evaluation/evaluation_report.md`,
+  `code/evaluation/usage_report.md`, this README section.
+- **Person A:** `code/models.py`, `code/parsers/*`, `code/state.py`,
+  `code/rules.py`, `code/multimodal.py`, `code/tests/*`, `tools/sample_harness.py`.
+
+### Results (see `code/evaluation/evaluation_report.md`)
+
+- Sample status accuracy **31/32**, exact sequence **24/32**, step **P=0.973 /
+  R=0.943 / F1=0.958**.
+- Full `output.csv`: 518 rows — 162 COMPLETE, 346 INCOMPLETE, 10 NOT_APPLICABLE.
+- Final run model spend: **0 calls, $0** (deterministic fallback); see
+  `code/evaluation/usage_report.md`.
