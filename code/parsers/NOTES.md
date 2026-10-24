@@ -57,3 +57,49 @@ lower-cased. A hash is `sha256(lower(email))`.
 Coverage on the 32 sample cases: after SQL, JSON, TXT and log parsing, 36 of
 111 expected (system, resource) pairs are not yet linked by a direct
 identifier. They fall under items 4 and 7, plus support_001 (PDF, case_07).
+
+## state.py / rules.py (Person A) — integration recipe for main.py
+
+```python
+from state import EvidenceIndex, CaseWindow
+from rules import load_rules, decide, OPERATION_ORDER, OP_STATE
+
+obs, scopes, skipped = load_evidence(ds)           # + multimodal observations
+events, act_obs, links = parse_activity(ds)
+idx = EvidenceIndex(obs + act_obs, scopes, links, events)   # build once
+rules = load_rules(ds)
+
+direct = {c: idx.direct_links(identity_of[c]) for c in all_cases}     # samples + eval
+wf = idx.assign_workflow([CaseWindow(c, req.reported_at, req.audit_at,
+                          {idx.category_of(r) for r in direct[c]}, req.reported_status)
+                          for c in all_cases])     # global, run once over ALL requests
+for c in deletion_cases:
+    for rid in direct[c] | wf.get(c, {}):
+        d = decide(idx.state_at(rid, req.audit_at), rules, req.audit_at)   # Decision or None
+```
+
+Step assembly (as validated against the samples):
+* The status is INCOMPLETE if any `d.finding` exists, otherwise COMPLETE.
+* Phases go FINDING, then REMEDIATION, then VERIFICATION. Within a phase, sort by
+  `(OPERATION_ORDER.index(op), system_id, resource_id)`. Each step's `state` is `OP_STATE[op]`.
+* Evidence: FINDING steps cite `d.evidence_id`. REMEDIATION and VERIFICATION
+  steps in INCOMPLETE cases use `""`.
+* COMPLETE cases contain verification steps only, each citing `d.evidence_id`.
+  Drop any decision whose `evidence_id` is empty (it cannot be cited).
+
+Scratch end-to-end check on the 32 samples, using a stand-in identity resolver,
+no classifier, and no image/PDF evidence:
+* status 31/32
+* exact step sequence 20/32
+* step precision 0.947, recall 0.927
+
+The remaining misses break down as:
+* records only present in PNG/PDF files: support_001, audit_record_6645 and
+  audit_record_5569
+* identifier-less accounts or analytics records shared by cases with the
+  *same* reported_at, which the evidence cannot tell apart
+
+Full 518-case run: no crashes, and every request email resolved to a user.
+Cases 45, 61 and 63 currently get no resources. Their resources are linked
+only through catalog links or image/PDF evidence (audit_record_003,
+object_19, marketing_001).
