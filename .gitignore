@@ -6,3 +6,4 @@ code.zip
 .cache/
 person-a.zip
 ghost-data.bundle
+*.bundle
