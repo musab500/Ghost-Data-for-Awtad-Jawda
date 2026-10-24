@@ -1,0 +1,6 @@
+CUSTOMER PLATFORM - SHIFT HANDOVER
+Snapshot: 2026-09-20T12:00:00Z
+
+Checks:
+
+- 2026-09-20T12:00:00Z | search_service | search_9001 | SEARCH_INDEX_ENTRY | NOT_FOUND | alice.cutoff@example.com

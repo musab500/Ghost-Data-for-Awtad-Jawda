@@ -1,0 +1,31 @@
+{
+  "exported_at": "2026-09-05T12:00:00Z",
+  "origin": "records_assurance",
+  "records": [
+    {
+      "recorded_at": "2026-09-05T12:00:00Z",
+      "system": "account_service",
+      "resource_id": "account_9003",
+      "record_type": "USER_PROFILE",
+      "result": "NOT_FOUND",
+      "subject_reference": "carol.retain@example.com"
+    },
+    {
+      "recorded_at": "2026-09-05T12:00:00Z",
+      "system": "security_service",
+      "resource_id": "audit_record_9003",
+      "record_type": "SECURITY_AUDIT_LOG",
+      "result": "FOUND",
+      "subject_reference": "user_903",
+      "retention_until": "2031-12-31T23:59:59Z"
+    },
+    {
+      "recorded_at": "2026-09-05T12:00:00Z",
+      "system": "identity_service",
+      "resource_id": "tombstone_9003",
+      "record_type": "ACCOUNT_TOMBSTONE",
+      "result": "REDACTED",
+      "subject_reference": "user_903"
+    }
+  ]
+}

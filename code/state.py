@@ -126,31 +126,47 @@ class EvidenceIndex:
             toks |= l.identifiers
         return toks
 
-    def direct_links(self, identity: Identity) -> dict[str, list[str]]:
+    def direct_links(self, identity: Identity, not_before: str | None = None,
+                     audit_at: str | None = None,
+                     has_later_request: bool = False) -> dict[str, list[str]]:
         """{resource_id: [reasons]} for resources carrying the person's identifiers.
 
+        * not_before: audit_at of the same person's previous request. Linking
+          evidence captured at or before it was already accounted for by that
+          request, so it does not link resources to this one.
+        * Linking evidence captured after audit_at still identifies the
+          person's records (identity is not state), but the state at audit_at
+          is only ever taken from evidence captured by then (state_at).
+          When the same person has a later request (has_later_request), such
+          evidence falls in that request's window and belongs to it instead.
+
         A person has one primary account. When several USER_PROFILE records
-        are linked (e.g. an old lookup of the same email against another
-        account), only the account(s) with the most recent linking evidence
-        are kept."""
+        are linked, accounts with linking evidence inside the case window
+        (after not_before, at or before audit_at) win over accounts only seen
+        later, and among those the most recently linked is kept."""
         toks = identity.tokens()
-        out: dict[str, list[str]] = defaultdict(list)
-        for t in sorted(toks):
-            for rid in self.rids_by_token.get(t, ()):
-                out[rid].append(f"identifier:{t}")
+        nb = parse_ts(not_before) if not_before else None
+        cut = parse_ts(audit_at) if audit_at else None
+        out: dict[str, list[str]] = {}
+        rank: dict[str, tuple] = {}
+        rids = sorted({r for t in toks for r in self.rids_by_token.get(t, ())})
+        for rid in rids:
+            times = [parse_ts(o.captured_at) for o in self.obs_by_rid.get(rid, ()) if o.identifiers & toks]
+            times += [parse_ts(l.observed_at) for l in self.links_by_rid.get(rid, ()) if l.identifiers & toks]
+            usable = [t for t in times if (nb is None or t > nb)
+                      and not (has_later_request and cut is not None and t > cut)]
+            if not usable:
+                continue
+            in_window = [t for t in usable if cut is None or t <= cut]
+            rank[rid] = (bool(in_window), max(in_window or usable))
+            out[rid] = [f"identifier:{t}" for t in sorted(toks & self.tokens_of_rid(rid))]
         accounts = [r for r in out if self.category_of(r) == "USER_PROFILE"]
         if len(accounts) > 1:
-            last = {r: self._last_link_time(r, toks) for r in accounts}
-            newest = max(last.values())
+            best = max(rank[r] for r in accounts)
             for r in accounts:
-                if last[r] < newest:
+                if rank[r] < best:
                     del out[r]
-        return dict(out)
-
-    def _last_link_time(self, rid: str, toks: set[str]):
-        times = [parse_ts(o.observed_at) for o in self.obs_by_rid.get(rid, ()) if o.identifiers & toks]
-        times += [parse_ts(l.observed_at) for l in self.links_by_rid.get(rid, ()) if l.identifiers & toks]
-        return max(times)
+        return out
 
     def category_of(self, rid: str) -> str | None:
         return _best_category(self.obs_by_rid.get(rid, ()), rid)
