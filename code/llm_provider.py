@@ -270,6 +270,30 @@ def _with_truncation_retry(role: str, run) -> tuple[dict, dict]:
 # --------------------------------------------------------------------------- #
 #  Providers
 # --------------------------------------------------------------------------- #
+# Models that reject a thinking budget (HTTP 400 INVALID_ARGUMENT): the default list comes from a
+# diagnostic call (gemini-3.5-flash-lite answers without the setting and fails with it); further
+# models are learned in-process on the first 400 and then called without the setting.
+DEFAULT_NO_THINKING_MODELS = "gemini-3.5-flash-lite"
+_NO_THINKING_LEARNED: set[str] = set()
+
+
+def _no_thinking_models() -> set[str]:
+    listed = os.environ.get("VISION_NO_THINKING_MODELS", DEFAULT_NO_THINKING_MODELS)
+    return {m.strip() for m in listed.split(",") if m.strip()} | _NO_THINKING_LEARNED
+
+
+def _vision_thinking_budget() -> int | None:
+    """Thinking-token budget for vision calls (VISION_THINKING_BUDGET): 0 = off (default); an
+    integer sets the budget; "default" leaves the model's own setting."""
+    v = os.environ.get("VISION_THINKING_BUDGET", "0").strip().lower()
+    if v in ("default", "none", ""):
+        return None
+    try:
+        return max(0, int(v))
+    except ValueError:
+        return 0
+
+
 def _usage(provider: str, model: str, requested: str, tin, tout, reported: bool) -> dict:
     return {"provider": provider, "model": model or requested, "requested_model": requested,
             "input_tokens": int(tin or 0), "output_tokens": int(tout or 0), "usage_reported": reported}
@@ -303,10 +327,21 @@ class GeminiProvider:
                "max_output_tokens": limit, "temperature": 0}
         if schema:
             cfg["response_json_schema"] = schema
+        budget = _vision_thinking_budget() if role == "vision" and model not in _no_thinking_models() else None
+        if budget is not None:     # transcription needs no reasoning: spend (almost) no thinking tokens
+            cfg["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
 
         def call():
-            resp = self._get_client().models.generate_content(
-                model=model, contents=contents, config=types.GenerateContentConfig(**cfg))
+            try:
+                resp = self._get_client().models.generate_content(
+                    model=model, contents=contents, config=types.GenerateContentConfig(**cfg))
+            except Exception as e:  # noqa: BLE001 - a model that rejects the thinking setting runs without it
+                if "thinking_config" not in cfg or classify_exception(e)[0] != "bad_request":
+                    raise
+                cfg.pop("thinking_config")
+                _NO_THINKING_LEARNED.add(model)
+                resp = self._get_client().models.generate_content(
+                    model=model, contents=contents, config=types.GenerateContentConfig(**cfg))
             return self._interpret(resp, model, schema)
 
         return _with_retries(call, model)

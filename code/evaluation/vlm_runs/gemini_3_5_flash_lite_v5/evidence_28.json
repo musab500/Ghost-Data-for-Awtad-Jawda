@@ -1,0 +1,63 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.5-flash-lite",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.5-flash-lite"
+  },
+  "file_id": "evidence_28",
+  "file_path": "evidence/images/support_ticket_console_20260524.png",
+  "file_sha256": "542b7aec17e6b2f38827896e7eb52c70e4bfaaca22433621be1f80f54884e944",
+  "records": [
+    {
+      "category": "USER_PROFILE",
+      "identifiers": [
+        "kagyeman8947@fastmail.com"
+      ],
+      "keys": [
+        "CS-5034"
+      ],
+      "notes": "Support ticket for customer Kofi Agyeman regarding order delivery inquiry.",
+      "observed_at": "",
+      "resource_id": "support_1034",
+      "state": "IDENTIFIABLE",
+      "system_id": "support_platform"
+    },
+    {
+      "category": "USER_PROFILE",
+      "identifiers": [],
+      "keys": [
+        "SWF-884103"
+      ],
+      "notes": "Order record associated with customer delivery status and timeline.",
+      "observed_at": "",
+      "resource_id": "ORD-20265034",
+      "state": "FOUND",
+      "system_id": ""
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:47:11Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1950,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.5-flash-lite",
+        "ok": true,
+        "output_tokens": 239,
+        "provider": "gemini",
+        "requested_model": "gemini-3.5-flash-lite",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1950,
+    "model": "gemini-3.5-flash-lite",
+    "output_tokens": 239,
+    "provider": "gemini",
+    "requested_model": "gemini-3.5-flash-lite",
+    "usage_reported": true
+  }
+}

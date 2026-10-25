@@ -68,13 +68,13 @@ CACHE_DIR = CODE_DIR / ".cache" / "multimodal"          # results of live calls 
 FROZEN_DIR = CODE_DIR / "multimodal_vlm"                # accepted results (committed)
 MANUAL_DIR = CODE_DIR / "multimodal_manual"             # manual transcriptions (committed fallback)
 USAGE_PATH = CODE_DIR / ".cache" / "multimodal_usage.json"
-PROMPT_VERSION = "v4"
+PROMPT_VERSION = "v5"
 # Default of MULTIMODAL_ALLOW_MANUAL ("1" = fallback allowed, "0" = never). Change this
 # to "0" once the accepted vision results are frozen in code/multimodal_vlm/ (see NOTES.md).
 MANUAL_FALLBACK_DEFAULT = "1"
 KNOWN_SYSTEMS = frozenset(SYSTEM_FOR_CATEGORY.values()) | {"marketing_platform", "object_storage"}
 CALL_PAUSE_SECONDS = float(os.environ.get("MULTIMODAL_CALL_PAUSE", "13"))   # between live calls
-RATE_LIMIT_BACKOFF = (30.0, 60.0, 120.0)        # extra waits after the provider's own retries gave up
+RATE_LIMIT_BACKOFF = ()                          # extra waits after the provider's own retries (none: a 429 stops the run)
 _sleep = time.sleep                              # replaced in tests
 MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "pdf": "application/pdf"}
 
@@ -121,19 +121,25 @@ For each record return:
   (account_ -> USER_PROFILE, search_ -> SEARCH_INDEX_ENTRY, backup_ -> BACKUP_ARCHIVE,
   tombstone_ -> ACCOUNT_TOMBSTONE, audit_record_ -> SECURITY_AUDIT_LOG, ...); follow it
 - state, by what the screen shows for that record:
-  * any record: FOUND = the record is listed and no direct identifier of a person is displayed
-    for it; NOT_FOUND = the screen says it does not exist
-  * IDENTIFIABLE = the record row itself displays a direct identifier (name, email, phone, email
-    hash). A record that only links to a user reference (a user id) is FOUND, not IDENTIFIABLE
-  * ANONYMIZED / REDACTED = kept, with the identifying fields shown as removed / masked
-  * data flows: ACTIVE = running or enabled, DISABLED = off or paused
-  * backups: ACTIVE = restorable (restore not blocked); BLOCKED = the screen shows restore blocked.
-    A backup is never IDENTIFIABLE or FOUND
+  * DATA_FLOW and BACKUP_ARCHIVE records take only ACTIVE (running / enabled / restorable),
+    DISABLED (off, paused, stopped) or BLOCKED (restore blocked). An identifier shown in a
+    selector or detail field does not make them IDENTIFIABLE
+  * every other record: FOUND = the record is listed and no direct identifier of a person is
+    displayed for it; NOT_FOUND = the screen says it does not exist; IDENTIFIABLE = the record's
+    own row or detail panel displays a direct identifier (name, email, phone, email hash); a
+    record that only links to a user reference (a user id) is FOUND, not IDENTIFIABLE
+  * ANONYMIZED / REDACTED = kept, with the identifying fields shown as removed / masked. A
+    retained reference or tombstone page that shows only a stable user reference and no direct
+    identifier (no name, email, phone, hash) is REDACTED
 - identifiers: every email, phone number, user_id and email hash displayed in that record's own
   row or detail panel. Do not copy an identifier shown elsewhere on the screen (another record,
   a header, a customer panel) onto a record that does not display it
 - observed_at: ISO-8601 UTC time the screen says the data was captured or refreshed, or "" if none
 - notes: one short factual sentence (at most 15 words)
+Include every record the page shows or links to: rows of a list, rows of a table, the detail
+panel, and records mentioned in an activity feed or in a field such as "Support" or "Linked
+record", even when the record has no row of its own. Do not drop a row because another record
+on the page looks more important.
 Transcribe only what is visible. Do not infer records that are not shown."""
 
 
@@ -185,14 +191,14 @@ def multimodal_observations(files: list[EvidenceFile],
 
     aliases: the catalog alias map (parsers.activity.resource_aliases), or the
     dataset directory, from which it is built (the main.py hook passes that).
-    backend: a VisionBackend, None (no model), or omitted to use llm_provider."""
+    backend: a VisionBackend, None (no model), or omitted: llm_provider when MULTIMODAL_LIVE=1, else no model."""
     load_env()
     if isinstance(aliases, (str, Path)):
         from parsers.activity import parse_activity, resource_aliases
         aliases = resource_aliases(parse_activity(Path(aliases))[0])
     aliases = aliases or {}
-    if backend is _AUTO:
-        backend = default_backend()
+    if backend is _AUTO:       # a live vision call needs an explicit opt-in (MULTIMODAL_LIVE=1) or --run
+        backend = default_backend() if os.environ.get("MULTIMODAL_LIVE") == "1" else None
     usage_path = usage_path or (USAGE_PATH if cache_dir == CACHE_DIR else cache_dir / "usage.json")
     cache_dir.mkdir(parents=True, exist_ok=True)
     allow_manual = os.environ.get("MULTIMODAL_ALLOW_MANUAL", MANUAL_FALLBACK_DEFAULT) != "0"
@@ -224,10 +230,11 @@ def multimodal_observations(files: list[EvidenceFile],
                       f"waiting {wait:.0f}s before retrying", file=log)
                 _sleep(wait)
                 entry = _call_vision(ev, backend, cache_dir, fresh, log)
-            if entry is None and fresh and fresh[-1].get("error_kind") == "rate_limit":
-                rate_limited = True      # a quota error persisted: do not spend more calls on it
-                print(f"multimodal: STOP: rate limit persisted for {ev.file_id} ({_quota_kind(_LAST_ERROR[0])}); "
-                      "no further live calls in this run", file=log)
+            if entry is None and fresh:
+                rate_limited = True      # any failed live call stops the run: no more calls on a failing setup
+                print(f"multimodal: STOP: live call failed for {ev.file_id} [{fresh[-1].get('error_kind')}]"
+                      + (f" ({_quota_kind(_LAST_ERROR[0])})" if fresh[-1].get("error_kind") == "rate_limit" else "")
+                      + "; no further live calls in this run", file=log)
         if entry is None and allow_manual:
             entry = _manual_entry(ev, manual_dir)
             if entry is not None:
@@ -496,7 +503,9 @@ def records_to_observations(ev: EvidenceFile, records: list[dict],
         said = (r.get("system_id") or "").strip()
         if said not in KNOWN_SYSTEMS:              # a product/brand name is not a system id
             said = ""
-        system = system or said or SYSTEM_FOR_CATEGORY.get(cat or "", "")
+        # the catalog names the owning system of a category (as the parsers do); the model's guess is
+        # used only for categories the catalog does not map
+        system = system or SYSTEM_FOR_CATEGORY.get(cat or "", "") or said
         out.append(Observation(
             resource_id=rid, system_id=system, category=cat, state=state, identifiers=ids,
             observed_at=observed, evidence_id=ev.file_id, source_kind="image",

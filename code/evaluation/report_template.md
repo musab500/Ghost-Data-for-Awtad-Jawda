@@ -53,6 +53,8 @@ The full 518-request run, computed by the same pipeline that writes `output.csv`
 
 {{multimodal}}
 
+{{vlm_section}}
+
 ## 6. Request classifier
 
 The classifier's NOT_APPLICABLE decisions are cross-checked against the `CLASSIFY_REQUEST`

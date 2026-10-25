@@ -1,0 +1,65 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v4",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_14",
+  "file_path": "evidence/images/connector_management_console_20260807.png",
+  "file_sha256": "e81fabc93ea1b5f4c918d934cdb2bea05d61737adfcc29f281494f5d8ec46355",
+  "records": [
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [
+        "jain.aditi@gmail.com"
+      ],
+      "keys": [
+        "customer_analytics_warehouse"
+      ],
+      "notes": "Data flow connector streaming events to customer analytics warehouse.",
+      "observed_at": "2026-08-07T08:00:00Z",
+      "resource_id": "data_flow_1121",
+      "state": "IDENTIFIABLE",
+      "system_id": "integration_service"
+    },
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [
+        "lucia-torres@gmail.com"
+      ],
+      "keys": [
+        "customer_analytics_warehouse"
+      ],
+      "notes": "Data flow connector filtering events by selector email.",
+      "observed_at": "2026-08-07T08:00:00Z",
+      "resource_id": "data_flow_9846",
+      "state": "IDENTIFIABLE",
+      "system_id": "integration_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:34:18Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1809,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 291,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1809,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 291,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}

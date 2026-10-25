@@ -31,10 +31,13 @@ class Multimodal(unittest.TestCase):
         _o, _s, cls.skipped = load_evidence(DATASET)
         events, _a, _l = parse_activity(DATASET)
         cls.aliases = resource_aliases(events)
-        cls.obs = multimodal_observations(cls.skipped, cls.aliases, log=io.StringIO())
+        cls._tmp = tempfile.mkdtemp()      # hermetic: neither live cache nor frozen results, never a live call
+        cls.obs = multimodal_observations(cls.skipped, cls.aliases, log=io.StringIO(), backend=None,
+                                          cache_dir=Path(cls._tmp) / "c", frozen_dir=Path(cls._tmp) / "f")
 
     @classmethod
     def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, True)
         if cls._key is not None:
             os.environ["ANTHROPIC_API_KEY"] = cls._key
 
@@ -415,10 +418,12 @@ class RealGeminiProviderWithFakeClient(unittest.TestCase):
             aliases = resource_aliases(parse_activity(DATASET)[0])
             saved = os.environ.pop("MULTIMODAL_ALLOW_MANUAL", None)
             os.environ["MULTIMODAL_ALLOW_MANUAL"] = "0"
+            os.environ["MULTIMODAL_LIVE"] = "1"        # the provider is a scripted fake: no network
             try:
                 out = multimodal_observations([ev], aliases, cache_dir=tmp / "c", log=io.StringIO(),
                                               manual_dir=tmp / "m", frozen_dir=tmp / "f", usage_path=tmp / "u.json")
             finally:
+                os.environ.pop("MULTIMODAL_LIVE", None)
                 os.environ.pop("MULTIMODAL_ALLOW_MANUAL", None)
                 if saved is not None:
                     os.environ["MULTIMODAL_ALLOW_MANUAL"] = saved
@@ -596,3 +601,45 @@ class PacingAndRateLimit(unittest.TestCase):
              "state": "FOUND", "identifiers": [], "observed_at": "", "notes": ""}
         out = records_to_observations(ev, [r], {}, log=io.StringIO())
         self.assertEqual(out[0].system_id, "security_service")
+
+
+class NoLiveCallWithoutOptIn(unittest.TestCase):
+    def test_default_backend_is_not_used_unless_multimodal_live(self):
+        def boom():
+            raise AssertionError("a live backend was requested")
+        old, env = multimodal.default_backend, os.environ.pop("MULTIMODAL_LIVE", None)
+        multimodal.default_backend = boom
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                multimodal_observations([], {}, cache_dir=Path(d) / "c", log=io.StringIO(),
+                                        usage_path=Path(d) / "u.json", frozen_dir=Path(d) / "f",
+                                        manual_dir=Path(d) / "m")
+            os.environ["MULTIMODAL_LIVE"] = "1"
+            with tempfile.TemporaryDirectory() as d, self.assertRaises(AssertionError):
+                multimodal_observations([], {}, cache_dir=Path(d) / "c", log=io.StringIO(),
+                                        usage_path=Path(d) / "u.json", frozen_dir=Path(d) / "f",
+                                        manual_dir=Path(d) / "m")
+        finally:
+            multimodal.default_backend = old
+            os.environ.pop("MULTIMODAL_LIVE", None)
+            if env is not None:
+                os.environ["MULTIMODAL_LIVE"] = env
+
+
+class FreezeAccepted(unittest.TestCase):
+    def test_freezes_only_accepted_files_of_the_run(self):
+        tool = _compare_tool()
+        _o, _s, skipped = load_evidence(DATASET)
+        pngs = {e.file_id: e for e in skipped if e.kind == "png"}
+        review = json.loads((Path(tool.REPO) / "code" / "evaluation" / "vlm_review.json").read_text())
+        meta = review["runs"]["run6"]
+        with tempfile.TemporaryDirectory() as d:
+            cache, frozen = Path(d) / "c", Path(d) / "f"
+            cache.mkdir()
+            for fid in ("evidence_14", "evidence_32"):         # accepted / rejected in run6
+                e = {"file_id": fid, "file_sha256": multimodal._sha256(pngs[fid].path),
+                     "extractor": {"method": "vlm", "provider": "gemini", "model": meta["model"],
+                                   "prompt_version": meta["prompt"]}, "records": []}
+                (cache / f"{fid}.json").write_text(json.dumps(e))
+            self.assertEqual(tool.freeze_accepted(DATASET, cache, frozen, "run6"), ["evidence_14"])
+            self.assertEqual([p.name for p in frozen.glob("*.json")], ["evidence_14.json"])

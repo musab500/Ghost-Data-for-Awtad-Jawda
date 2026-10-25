@@ -1,0 +1,104 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.5-flash-lite",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.5-flash-lite"
+  },
+  "file_id": "evidence_32",
+  "file_path": "evidence/images/backup_restore_console_20260429.png",
+  "file_sha256": "2c246aa5843bec609b9ddfdf1154cd81e0fd61996f83954735e9856e48c18bf3",
+  "records": [
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "bluepeakco@outlook.com"
+      ],
+      "keys": [
+        "bluepeakco@outlook.com"
+      ],
+      "notes": "Weekly snapshot backup archive for bluepeakco@outlook.com.",
+      "observed_at": "",
+      "resource_id": "backup_9291",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "miller.logistics@company.com"
+      ],
+      "keys": [
+        "miller.logistics@company.com"
+      ],
+      "notes": "Weekly snapshot backup archive for miller.logistics@company.com.",
+      "observed_at": "",
+      "resource_id": "backup_9288",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "areed1433@gmail.com"
+      ],
+      "keys": [
+        "areed1433@gmail.com",
+        "s3://northstar-backups/customer-platform/weekly/segment-42-20260426.tar.zst"
+      ],
+      "notes": "Detailed weekly backup archive view for areed1433@gmail.com.",
+      "observed_at": "",
+      "resource_id": "backup_9287",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "summit-retail@company.com"
+      ],
+      "keys": [
+        "summit-retail@company.com"
+      ],
+      "notes": "Weekly snapshot backup archive for summit-retail@company.com.",
+      "observed_at": "",
+      "resource_id": "backup_9286",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [],
+      "keys": [],
+      "notes": "Backup archive mentioned in the recent activity feed.",
+      "observed_at": "",
+      "resource_id": "backup_9281",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:47:27Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1936,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.5-flash-lite",
+        "ok": true,
+        "output_tokens": 632,
+        "provider": "gemini",
+        "requested_model": "gemini-3.5-flash-lite",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1936,
+    "model": "gemini-3.5-flash-lite",
+    "output_tokens": 632,
+    "provider": "gemini",
+    "requested_model": "gemini-3.5-flash-lite",
+    "usage_reported": true
+  }
+}

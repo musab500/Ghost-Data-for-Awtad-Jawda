@@ -709,3 +709,107 @@ branch=person-a
 repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
+
+## [2026-10-25T06:00:00Z] Thinking off for vision, flash-lite run (400), review of v4 results
+
+User Prompt (verbatim, secrets redacted):
+Context: no paid billing (Gemini free tier; gemini-3.6-flash daily quota exhausted). Goal: complete the real VLM run on the 11 PNGs within free limits, or stop cleanly. 1) Reduce vision cost: thinking budget minimum/off for vision calls in code/llm_provider.py, keep max_output_tokens and truncation retry, keep cache, add tests, do not change prompt v4. 2) Run VISION_MODEL=gemini-3.5-flash-lite python3 tools/compare_multimodal.py --run --freeze ... 13s pause, stop on 429, stop on 0 records. 3) If all 11 succeed: review every VLM-vs-manual difference against the image...
+
+Agent Response Summary:
+Added a vision-only thinking budget (default 0, env VISION_THINKING_BUDGET) to llm_provider.py as instructed, with a fallback if a model rejects it, and tests. While testing I found a unit test calling the real provider: it made 11 real v4 calls on gemini-3.6-flash (thinking off, ~100-800 output tokens each); I made the test hermetic and recorded those calls in the usage ledger. The flash-lite run returned 400 INVALID_ARGUMENT on every file (11 failed calls, no tokens), so there are no flash-lite results; I did not freeze anything. I reviewed the v4 gemini-3.6-flash results against the images: two output rows would be wrong (case_39, case_46).
+
+Actions:
+* edited code/llm_provider.py (vision thinking config), code/tests/test_llm_provider.py, code/tests/test_multimodal.py, code/multimodal.py, code/multimodal_usage_prior_runs.json
+* python3 tools/compare_multimodal.py --run with VISION_MODEL=gemini-3.5-flash-lite (11x 400)
+* offline main.py runs with LLM_PROVIDER=none; output.csv untouched; nothing frozen
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
+## [2026-10-25T07:00:00Z] Prompt v5, flash-lite 400 diagnosed (thinking setting), model-dependent thinking
+
+User Prompt (verbatim, secrets redacted):
+Decision: go with prompt v5 (generic wording) and ONE re-run when quota is back (~15:00 Asia/Kuala_Lumpur). Manual transcription remains the committed fallback. Before any live call: 1) diagnose the flash-lite 400 with exactly ONE file (evidence_14): first call without the thinking setting; if it succeeds, stop and make the thinking setting model-dependent. 2) Prompt v5, generic only. 3) Tests hermetic; keep all earlier calls in the ledger. 4) When quota is back: single run of all 11 files on gemini-3.6-flash (thinking off), 13s pause, stop on first 429. 5) Review every difference against the image; accept VLM only if verified; then final_run.py --require-llm; do not commit output.csv before. 6) Tell Person B to merge 1947b6f.
+
+Agent Response Summary:
+Wrote prompt v5 (data flows/backups only ACTIVE/DISABLED/BLOCKED, retained reference without identifiers is REDACTED, list every linked record). Diagnostic call 1 (flash-lite, evidence_14, no thinking setting, with schema) succeeded, so the 400 was the thinking budget; stopped after that one call. Made the thinking setting model-dependent (skip list plus learn-on-400), added a test, and recorded all earlier calls in the usage ledger. No further live calls; the real v5 run waits for quota.
+
+Actions:
+* edited code/multimodal.py (prompt v5), code/llm_provider.py, code/tests/test_llm_provider.py, code/multimodal_usage_prior_runs.json
+* one live diagnostic call (gemini-3.5-flash-lite, evidence_14); 118 tests pass; output.csv untouched
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
+## [2026-10-25T08:00:00Z] Flash-lite v5 run on 11 screenshots: reviewed, not accepted
+
+User Prompt (verbatim, secrets redacted):
+Quota for gemini-3.5-flash-lite is available (diagnostic call succeeded). Run now: 1) one pass of all 11 files with VISION_MODEL=gemini-3.5-flash-lite, prompt v5, thinking skipped, 13s pause; stop at the first failure or 429 and report the exact message; no retry loops. 2) Review every VLM-vs-manual difference against the images; accept only if verified, else keep manual and document in NOTES.md (data flows ACTIVE, tombstone_17 REDACTED, support_9538 with evidence_04). 3) If good: freeze, then final_run.py --require-llm; do not commit output.csv before it passes. 4) If not good enough: do not freeze; wait for gemini-3.6-flash quota; keep both models' comparison files and all usage in the ledger.
+
+Agent Response Summary:
+Made any failed live call stop the run, then ran the single pass: 11 of 11 files succeeded (21,454 in / 5,139 out tokens, no retries, no 0-record file). Reviewed all differences against the images: data flows now ACTIVE and support_9538 is listed, but 6 of 11 files are not acceptable (resource id invented in evidence_60, wrong structure in evidence_42, displayed identifiers dropped in 09 and 23, wrong category in 28, unverified extra record in 32). Not good enough, so nothing was frozen and final_run was not run; results moved out of the live cache, preserved under code/evaluation/vlm_runs/flash_lite_v5/, NOTES.md updated.
+
+Actions:
+* edited code/multimodal.py (stop at first failed live call), code/parsers/NOTES.md, code/multimodal_usage_prior_runs.json
+* VISION_MODEL=gemini-3.5-flash-lite python3 tools/compare_multimodal.py --run (no --freeze); offline pipeline diff; image review
+* output.csv untouched and identical to the manual-fallback pipeline output
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
+## [2026-10-25T09:00:00Z] Delivery documents prepared; unplanned live calls found and gated
+
+User Prompt (verbatim, secrets redacted):
+Decision: one final run of all 11 files on gemini-3.6-flash with prompt v5 when its quota is back (~15:00 Asia/Kuala_Lumpur). This is the last VLM attempt. Meanwhile (no live calls): 1) prepare the delivery documents: evaluation_report.md and usage_report.md must include a clear VLM section (models, prompt versions, every run with tokens, per-file agreement vs manual, the six rejected files and why); README must state that the committed multimodal observations are manual transcriptions verified against the images, with the VLM as a draft and cross-check. 2) when quota is back: single pass, 13s pause, stop on first failure or 429; review every difference against the images; freeze nothing unless all 11 verified; partial adoption per-file and documented. 3) then final_run.py --require-llm only if at least the classifier ran with a real model; otherwise without it and say so. Do not commit output.csv before that. 4) report the final row-level diff against the committed output.csv.
+
+Agent Response Summary:
+Added tools/vlm_section.py (generates code/evaluation/vlm_section.md from recorded runs and vlm_review.json), wired it into evaluation_report.md and usage_report.md, and updated README. While regenerating the reports I ran code/evaluation/main.py, which ran the pipeline with the real provider and made 9 live gemini-3.6-flash calls (prompt v5) plus some classifier calls, against the no-live-calls instruction. I recorded those calls in the ledger and the raw results, set them aside, and made live vision calls require MULTIMODAL_LIVE=1 or compare_multimodal.py --run (test added). The 9 results match the manual output except evidence_32's extra record; with them the 518-row output equals the committed output.csv.
+
+Actions:
+* new tools/vlm_section.py, code/evaluation/vlm_review.json, code/evaluation/vlm_section.md, code/evaluation/vlm_runs/*
+* edited README.md, code/evaluation/main.py, report_template.md, usage_report.py, code/multimodal.py (MULTIMODAL_LIVE gate, catalog system_id), tests, .env.example
+* 9 unplanned live vision calls (gemini-3.6-flash, v5) recorded; no output.csv change
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
+## [2026-10-25T05:15:00Z] evidence_46 429, images 19/37 verified, classifier batch tool, freeze-accepted
+
+User Prompt (verbatim, secrets redacted):
+Decision: when gemini-3.6-flash quota is back, run ONLY evidence_46 and evidence_60 (v5, same model, 13s pause, stop on first failure/429 and report the exact message). Keep the 9 recorded results. Document in NOTES.md and the VLM section that v5 results come from two sessions and 9 calls were unplanned, with ledger entries. Then: 1) open images for evidence_19 and 37 and verify; review 46 and 60. 2) per-file adoption, documented; freeze only what is verified. 3) classifier: run in batches with the cache, stop on first 429; if it completes run final_run.py --require-llm, else without it and state the classifier mode honestly. 4) report the row diff against committed output.csv (expected 0); do not commit output.csv before the final run passes. Tell Person B to merge 1947b6f and b9e932c.
+
+Agent Response Summary:
+Verified evidence_19 and 37 against their images. Called only evidence_46: HTTP 429 RESOURCE_EXHAUSTED, run stopped, evidence_60 not called (recorded in the ledger). Documented the two sessions and the unplanned calls in NOTES.md and the VLM section, added freeze_accepted (per-file freezing from vlm_review.json) with a test, and a paced classifier batch tool; moved 398 fallback-sourced entries out of the classifier cache so only real model verdicts count. The classifier batch is running in the background.
+
+Actions:
+* edited NOTES.md, vlm_review.json, vlm_section.py, compare_multimodal.py, tests; new tools/classify_batch.py
+* one live vision call (429); classifier batch calls on gemini-3.5-flash-lite (in progress)
+* output.csv untouched; nothing frozen
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none

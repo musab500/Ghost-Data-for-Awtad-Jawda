@@ -1,0 +1,97 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_32",
+  "file_path": "evidence/images/backup_restore_console_20260429.png",
+  "file_sha256": "2c246aa5843bec609b9ddfdf1154cd81e0fd61996f83954735e9856e48c18bf3",
+  "records": [
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "bluepeakco@outlook.com"
+      ],
+      "keys": [],
+      "notes": "Archive record backup_9291 for bluepeakco@outlook.com with size 102.3 GB.",
+      "observed_at": "",
+      "resource_id": "backup_9291",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "miller.logistics@company.com"
+      ],
+      "keys": [],
+      "notes": "Archive record backup_9288 for miller.logistics@company.com with size 67.1 GB.",
+      "observed_at": "",
+      "resource_id": "backup_9288",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "areed1433@gmail.com"
+      ],
+      "keys": [
+        "s3://northstar-backups/customer-platform/weekly/segment-42-20260426.tar.zst"
+      ],
+      "notes": "Archive record backup_9287 selected with detail panel showing S3 storage path.",
+      "observed_at": "",
+      "resource_id": "backup_9287",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "summit-retail@company.com"
+      ],
+      "keys": [],
+      "notes": "Archive record backup_9286 for summit-retail@company.com with size 91.4 GB.",
+      "observed_at": "",
+      "resource_id": "backup_9286",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [],
+      "keys": [],
+      "notes": "Archive record backup_9281 referenced in the activity log as restored on 24 Apr.",
+      "observed_at": "",
+      "resource_id": "backup_9281",
+      "state": "ACTIVE",
+      "system_id": "backup_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:56:23Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1936,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 624,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1936,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 624,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v3",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_04",
+  "file_path": "evidence/images/account_admin_console_20260926.png",
+  "file_sha256": "d5c32ca5b6e1a2b4bbe9f5d41835ef1fd5d4f7061dab9067a4f9f88cea3c1861",
+  "records": [
+    {
+      "category": "USER_PROFILE",
+      "identifiers": [
+        "haruka.s1838@zoho.com",
+        "+81 90 7610 2507",
+        "user_11"
+      ],
+      "keys": [
+        "user_11"
+      ],
+      "notes": "User profile for Haruka Sato in Customer Operations.",
+      "observed_at": "",
+      "resource_id": "account_5762",
+      "state": "IDENTIFIABLE",
+      "system_id": "account_service"
+    },
+    {
+      "category": "SUPPORT_MESSAGE",
+      "identifiers": [],
+      "keys": [
+        "CS-8538"
+      ],
+      "notes": "Support record associated with customer profile.",
+      "observed_at": "",
+      "resource_id": "support_9538",
+      "state": "FOUND",
+      "system_id": "support_platform"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T03:51:33Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1821,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 2686,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1821,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 2686,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}
