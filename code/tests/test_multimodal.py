@@ -31,10 +31,13 @@ class Multimodal(unittest.TestCase):
         _o, _s, cls.skipped = load_evidence(DATASET)
         events, _a, _l = parse_activity(DATASET)
         cls.aliases = resource_aliases(events)
-        cls.obs = multimodal_observations(cls.skipped, cls.aliases, log=io.StringIO())
+        cls._tmp = tempfile.mkdtemp()      # hermetic: neither live cache nor frozen results, never a live call
+        cls.obs = multimodal_observations(cls.skipped, cls.aliases, log=io.StringIO(), backend=None,
+                                          cache_dir=Path(cls._tmp) / "c", frozen_dir=Path(cls._tmp) / "f")
 
     @classmethod
     def tearDownClass(cls):
+        shutil.rmtree(cls._tmp, True)
         if cls._key is not None:
             os.environ["ANTHROPIC_API_KEY"] = cls._key
 

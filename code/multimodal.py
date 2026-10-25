@@ -74,7 +74,7 @@ PROMPT_VERSION = "v4"
 MANUAL_FALLBACK_DEFAULT = "1"
 KNOWN_SYSTEMS = frozenset(SYSTEM_FOR_CATEGORY.values()) | {"marketing_platform", "object_storage"}
 CALL_PAUSE_SECONDS = float(os.environ.get("MULTIMODAL_CALL_PAUSE", "13"))   # between live calls
-RATE_LIMIT_BACKOFF = (30.0, 60.0, 120.0)        # extra waits after the provider's own retries gave up
+RATE_LIMIT_BACKOFF = ()                          # extra waits after the provider's own retries (none: a 429 stops the run)
 _sleep = time.sleep                              # replaced in tests
 MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "pdf": "application/pdf"}
 

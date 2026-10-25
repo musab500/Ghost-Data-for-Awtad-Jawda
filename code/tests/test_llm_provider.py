@@ -109,6 +109,29 @@ class GeminiProviderTests(unittest.TestCase):
         self.assertEqual(cfg.response_json_schema, SCHEMA)
         self.assertEqual(self.client.calls[0]["model"], lp.DEFAULT_MODELS["gemini"]["classifier"])
 
+    def test_vision_calls_turn_thinking_off_classifier_calls_do_not(self):
+        self.provider([gresp(), gresp()])
+        self.client.script = [gresp(), gresp()]
+        p = lp.GeminiProvider("k-test", client=self.client)
+        p.vision_json("s", "p", b"\x89PNG", "image/png", SCHEMA)
+        p.complete_json("s", "u", SCHEMA)
+        vision_cfg, classifier_cfg = (c["config"] for c in self.client.calls)
+        self.assertEqual(vision_cfg.thinking_config.thinking_budget, 0)
+        self.assertIsNone(classifier_cfg.thinking_config)
+        self.assertEqual(vision_cfg.max_output_tokens, lp.MAX_OUTPUT_TOKENS["vision"])
+
+    def test_vision_thinking_budget_env_and_unsupported_model_fallback(self):
+        os.environ["VISION_THINKING_BUDGET"] = "128"
+        self.addCleanup(os.environ.pop, "VISION_THINKING_BUDGET", None)
+        p = self.provider([gresp()])
+        p.vision_json("s", "p", b"x", "image/png", SCHEMA)
+        self.assertEqual(self.client.calls[0]["config"].thinking_config.thinking_budget, 128)
+        os.environ["VISION_THINKING_BUDGET"] = "0"
+        p = self.provider([ValueError("400 INVALID_ARGUMENT: thinking budget is not supported"), gresp()])
+        p.vision_json("s", "p", b"x", "image/png", SCHEMA)
+        self.assertIsNotNone(self.client.calls[0]["config"].thinking_config)
+        self.assertIsNone(self.client.calls[1]["config"].thinking_config)
+
     def test_model_env_override(self):
         os.environ["CLASSIFIER_MODEL"] = "gemini-custom"
         self.provider([gresp()]).complete_json("s", "u", SCHEMA)
