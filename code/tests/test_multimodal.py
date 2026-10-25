@@ -20,6 +20,8 @@ from parsers import load_evidence  # noqa: E402
 from parsers.activity import parse_activity, resource_aliases  # noqa: E402
 from parsers.manifest import load_manifest  # noqa: E402
 
+multimodal.PRIOR_RUNS_PATH = Path("/nonexistent/prior_runs.json")   # keep the real superseded-run ledger out of tests
+
 
 class Multimodal(unittest.TestCase):
     @classmethod
@@ -511,3 +513,30 @@ class CompareTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IdPrefixCategoryAndPriorRuns(unittest.TestCase):
+    def test_id_prefix_overrides_conflicting_category(self):
+        from parsers.manifest import EvidenceFile
+        ev = EvidenceFile(file_id="evidence_x", path=Path("x.png"), rel_path="evidence/images/x.png",
+                          origin="screen", captured_at="2026-05-01T00:00:00Z")
+        recs = [{"resource_id": "tombstone_9", "keys": [], "system_id": "", "category": "USER_PROFILE",
+                 "state": "REDACTED", "identifiers": [], "observed_at": "", "notes": ""}]
+        out = multimodal.records_to_observations(ev, recs, {}, log=io.StringIO())
+        self.assertEqual(out[0].category, "ACCOUNT_TOMBSTONE")
+
+    def test_prior_runs_are_in_the_ledger(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            prior = Path(d) / "prior.json"
+            prior.write_text(json.dumps({"calls": [{"file_id": "e", "ok": True, "input_tokens": 3,
+                                                    "output_tokens": 4, "superseded": True}]}))
+            old = multimodal.PRIOR_RUNS_PATH
+            multimodal.PRIOR_RUNS_PATH = prior
+            try:
+                out = Path(d) / "u.json"
+                multimodal._write_usage(out, [], [], [])
+                calls = json.loads(out.read_text())["calls"]
+            finally:
+                multimodal.PRIOR_RUNS_PATH = old
+        self.assertEqual([c["input_tokens"] for c in calls], [3])

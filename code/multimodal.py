@@ -67,7 +67,7 @@ CACHE_DIR = CODE_DIR / ".cache" / "multimodal"          # results of live calls 
 FROZEN_DIR = CODE_DIR / "multimodal_vlm"                # accepted results (committed)
 MANUAL_DIR = CODE_DIR / "multimodal_manual"             # manual transcriptions (committed fallback)
 USAGE_PATH = CODE_DIR / ".cache" / "multimodal_usage.json"
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 # Default of MULTIMODAL_ALLOW_MANUAL ("1" = fallback allowed, "0" = never). Change this
 # to "0" once the accepted vision results are frozen in code/multimodal_vlm/ (see NOTES.md).
 MANUAL_FALLBACK_DEFAULT = "1"
@@ -108,14 +108,25 @@ For each record return:
 - resource_id: the record's resource id if one is shown (e.g. export_1260), else ""
 - keys: every other reference shown for that record (file name, statement number,
   ticket number, customer key), exactly as displayed
-- system_id: the owning system (e.g. account_service, search_service, analytics_platform,
-  support_platform, export_service, integration_service, backup_service, security_service,
-  identity_service, marketing_platform, object_storage)
-- category: one of {sorted(CATEGORIES)}
-- state: FOUND (record exists), NOT_FOUND, IDENTIFIABLE (record shows a direct identifier:
-  name, email, phone, email hash), ANONYMIZED, REDACTED (kept but direct identifiers removed),
-  ACTIVE (data flow running / backup restorable), DISABLED (data flow off), BLOCKED (restore blocked)
-- identifiers: every email, phone number, user_id and email hash shown for that record
+- system_id: the system the screen itself names (title bar, product name, source column), e.g.
+  account_service, search_service, analytics_platform, support_platform, export_service,
+  integration_service, backup_service, security_service, identity_service, marketing_platform,
+  object_storage; if the screen names none, the system that normally owns that category
+- category: one of {sorted(CATEGORIES)}. The prefix of a resource id names its category
+  (account_ -> USER_PROFILE, search_ -> SEARCH_INDEX_ENTRY, backup_ -> BACKUP_ARCHIVE,
+  tombstone_ -> ACCOUNT_TOMBSTONE, audit_record_ -> SECURITY_AUDIT_LOG, ...); follow it
+- state, by what the screen shows for that record:
+  * any record: FOUND = the record is listed and no direct identifier of a person is displayed
+    for it; NOT_FOUND = the screen says it does not exist
+  * IDENTIFIABLE = the record row itself displays a direct identifier (name, email, phone, email
+    hash). A record that only links to a user reference (a user id) is FOUND, not IDENTIFIABLE
+  * ANONYMIZED / REDACTED = kept, with the identifying fields shown as removed / masked
+  * data flows: ACTIVE = running or enabled, DISABLED = off or paused
+  * backups: ACTIVE = restorable (restore not blocked); BLOCKED = the screen shows restore blocked.
+    A backup is never IDENTIFIABLE or FOUND
+- identifiers: every email, phone number, user_id and email hash displayed in that record's own
+  row or detail panel. Do not copy an identifier shown elsewhere on the screen (another record,
+  a header, a customer panel) onto a record that does not display it
 - observed_at: ISO-8601 UTC time the screen says the data was captured or refreshed, or "" if none
 - notes: one short factual sentence (at most 15 words)
 Transcribe only what is visible. Do not infer records that are not shown."""
@@ -436,6 +447,10 @@ def records_to_observations(ev: EvidenceFile, records: list[dict],
         if problem:
             print(f"multimodal: {ev.file_id} record {i} dropped: {problem}", file=log)
             continue
+        by_id = category_for_resource(rid)
+        if by_id and cat != by_id:                 # the id prefix names the category; the id wins
+            print(f"multimodal: {ev.file_id} {rid}: category {cat} -> {by_id} (from id prefix)", file=log)
+            cat = by_id
         ids = {n for n in (normalize_identifier(x) for x in r.get("identifiers") or []) if n}
         observed = ev.captured_at
         t = r.get("observed_at") or ""
@@ -465,6 +480,17 @@ def _resolve(keys: list[str], aliases: dict[str, tuple[str, str]]) -> tuple[str 
     return None, None
 
 
+PRIOR_RUNS_PATH = CODE_DIR / "multimodal_usage_prior_runs.json"   # superseded runs, committed
+
+
+def _prior_run_calls() -> list:
+    """Real calls of earlier runs whose results were superseded (still spent, still reported)."""
+    try:
+        return list(json.loads(PRIOR_RUNS_PATH.read_text(encoding="utf-8")).get("calls", []))
+    except (OSError, ValueError):
+        return []
+
+
 def _write_usage(path: Path, fresh: list, used: list, skipped: list) -> None:
     """Write the usage ledger (schema read by evaluation/usage_report.py).
 
@@ -482,6 +508,7 @@ def _write_usage(path: Path, fresh: list, used: list, skipped: list) -> None:
             calls += recs          # includes a failed first attempt, which was billed too
         else:
             calls += [c for c in fresh if c["ok"] and c["file_id"] == u["file_id"]]
+    calls += _prior_run_calls()
     report = {
         "calls": calls,
         "api_calls_this_run": len(fresh),            # API responses, retries counted
