@@ -29,6 +29,10 @@ from models import norm_email  # noqa: E402
 from parsers import load_evidence  # noqa: E402
 from parsers.activity import parse_activity, non_deletion_flags  # noqa: E402
 from state import EvidenceIndex, CaseWindow, flagged_cases  # noqa: E402
+try:  # request-window rule (Person A); absent in older state.py
+    from state import RequestRef as _REQUEST_REF  # noqa: E402
+except ImportError:
+    _REQUEST_REF = None
 from rules import load_rules, decide, OPERATION_ORDER, OP_STATE  # noqa: E402
 from identity import IdentityResolver  # noqa: E402
 from classifier import RequestClassifier  # noqa: E402
@@ -103,6 +107,7 @@ class Pipeline:
         self.ds = Path(dataset_dir)
         obs, scopes, skipped = load_evidence(self.ds)
         mm = _load_multimodal(skipped, self.ds)
+        self.multimodal_obs = mm
         self.multimodal_count = len(mm)
         obs = obs + mm
         self.skipped = skipped
@@ -117,9 +122,24 @@ class Pipeline:
         self.identity = {}                                 # case_id -> Identity|None
         self.direct = {}                                   # case_id -> {rid: [reasons]}
         for c, r in self.requests.items():
-            ident = self.resolver.resolve(r["email"])
-            self.identity[c] = ident
-            self.direct[c] = {k: list(v) for k, v in self.idx.direct_links(ident).items()} if ident else {}
+            self.identity[c] = self.resolver.resolve(r["email"])
+        # Per-person request windows (Person A, state.EvidenceIndex.link_requests): all requests
+        # are linked together so a person's later request does not inherit earlier resources.
+        self.request_windows = hasattr(self.idx, "link_requests") and _REQUEST_REF is not None
+        if self.request_windows:
+            refs = [_REQUEST_REF(c, self.identity[c], r["audit_at"], r["requested_at"])
+                    for c, r in self.requests.items()]
+            linked = self.idx.link_requests(refs)          # ALL requests (samples + evaluation) together
+            for c in self.requests:
+                self.direct[c] = ({k: list(v) for k, v in linked.get(c, {}).items()}
+                                  if self.identity[c] else {})
+        else:
+            print("WARNING: state.py has no RequestRef/link_requests; falling back to per-case "
+                  "direct_links. Results will NOT match the request-window rule.", file=sys.stderr)
+            for c in self.requests:
+                ident = self.identity[c]
+                self.direct[c] = ({k: list(v) for k, v in self.idx.direct_links(ident).items()}
+                                  if ident else {})
 
         self.workflow = self._assign_workflow()            # case_id -> {rid: reason}
 
@@ -306,9 +326,11 @@ def _write_run_manifest(pipeline: Pipeline, n_rows: int, dist) -> None:
     clf = pipeline.classifier
     manifest = {"rows": n_rows, "status_distribution": dict(dist),
                 "classifier_mode": "llm" if clf.use_llm else "fallback",
-                "classifier_model": clf.model, "new_llm_calls": clf.calls,
+                "classifier_provider": clf.provider, "classifier_model": clf.model,
+                "llm_disabled_reason": clf.llm_disabled_reason, "new_llm_calls": clf.calls,
                 "llm_cache_hits": clf.cache_hits, "llm_errors": len(clf.llm_errors),
-                "multimodal_observations": pipeline.multimodal_count}
+                "multimodal_observations": pipeline.multimodal_count,
+                "request_windows": pipeline.request_windows}
     d = Path(__file__).resolve().parent / ".cache"
     d.mkdir(exist_ok=True)
     (d / "last_run.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")

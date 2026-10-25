@@ -1,10 +1,22 @@
 {
-  "source": "https://platform.claude.com/docs/en/about-claude/pricing",
-  "retrieved": "2026-10-25",
-  "unit": "USD per million tokens (MTok), base input and output; prompts up to 100,000 tokens",
+  "unit": "USD per million tokens (MTok), base (paid-tier) input and output, standard (non-batch) requests",
+  "gemini_tier": "free",
+  "gemini_tier_help": "Set to 'free' if the Gemini key runs on the free tier (cost is then reported as $0.00 with the paid price as a reference) or 'paid' if billing is enabled. 'unknown' reports the paid-tier cost.",
   "models": {
-    "claude-haiku-5-5":  {"input": 0.10, "output": 0.50},
-    "claude-sonnet-5-5": {"input": 2.00, "output": 10.00},
-    "claude-opus-5-5":   {"input": 4.00, "output": 20.00}
+    "anthropic/claude-haiku-5-5": {
+      "input": 0.10, "output": 0.50,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing", "retrieved": "2026-10-25",
+      "note": "prompts up to 100,000 tokens"
+    },
+    "gemini/gemini-3.5-flash-lite": {
+      "input": 0.30, "output": 2.50,
+      "source": "https://ai.google.dev/gemini-api/docs/whats-new-gemini-3.6", "retrieved": "2026-10-25",
+      "note": "Copied by the project owner from the official page; that page was not reachable from the environment that produced this file, so it was not re-checked there."
+    },
+    "gemini/gemini-3.6-flash": {
+      "input": 1.50, "output": 7.50,
+      "source": "https://ai.google.dev/gemini-api/docs/whats-new-gemini-3.6", "retrieved": "2026-10-25",
+      "note": "Copied by the project owner from the official page; that page was not reachable from the environment that produced this file, so it was not re-checked there."
+    }
   }
 }

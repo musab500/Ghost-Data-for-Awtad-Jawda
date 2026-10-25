@@ -1,0 +1,11 @@
+{
+  "_comment": "Documented causes of sample mismatches (from code/parsers/NOTES.md, Person A). Keyed by case_id. A mismatch with no entry here is reported as 'no documented cause'.",
+  "case_03": "analytics_9406 vs analytics_5589: two anonymisations seconds apart, no identifier, inconsistent activity order.",
+  "case_04": "account_004 appears in no evidence or activity row; only a naming coincidence links it, which is not used.",
+  "case_07": "support_001 is evidenced only in a PDF; needs the multimodal observation.",
+  "case_18": "audit_record_6645 appears in no participant file.",
+  "case_20": "audit_record_5569 appears in no participant file.",
+  "case_23": "account_410 vs account_7015: both FAILED and citable only by snapshot omission; nothing separates them.",
+  "case_27": "analytics_4574 vs analytics_6077: actions 44 s apart with alternating activity order.",
+  "case_28": "analytics_4574 vs analytics_6077: mirror of case_27."
+}

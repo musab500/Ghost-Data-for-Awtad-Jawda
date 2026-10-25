@@ -7,11 +7,13 @@ list — even when its other fields resemble a deletion case.
 
 Two layers:
 
-1. An LLM classifier (optional). It is used only when an API key is present in
-   the environment. Results are cached by ``sha256(text + model + prompt
-   version)`` so a given request text is classified at most once, and the cache
-   makes full-dataset runs cheap and reproducible. The API key is read from the
-   environment only and never logged or cached.
+1. An LLM classifier (optional) through ``llm_provider.complete_json`` (Gemini or Anthropic,
+   chosen by environment; see llm_provider.py). It is used only when a provider key is
+   configured. Verdicts are cached by ``sha256(text + provider + model + prompt version)`` so a
+   given request text is classified at most once and full runs are cheap and reproducible. A
+   failed, blocked, empty or malformed response is NEVER cached as a success: the text falls
+   back to the deterministic rules for that run and is retried on the next one. Real per-call
+   usage (from the API response only) is appended to code/.cache/classifier_usage.json.
 
 2. A deterministic negation / intent fallback. It runs when no API key is
    available, and it also acts as a safety override on top of the LLM: an
@@ -34,37 +36,31 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-PROMPT_VERSION = "v1"
-DEFAULT_MODEL = os.environ.get("GHOST_CLASSIFIER_MODEL", "claude-haiku-5-5")
+import llm_provider
+from llm_provider import load_dotenv, LLMFailure  # noqa: F401  (load_dotenv re-exported)
+
+PROMPT_VERSION = "v2"
 _CACHE_DIR = Path(__file__).resolve().parent / ".cache"
 _CACHE_PATH = _CACHE_DIR / "classifier.json"            # raw LLM verdicts, keyed by hash
-USAGE_PATH = _CACHE_DIR / "classifier_usage.json"       # one record per real API call
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def load_dotenv(path: Path | None = None) -> bool:
-    """Load KEY=VALUE lines from a gitignored .env into os.environ (existing
-    variables win). Values are never printed or logged. Returns True if loaded."""
-    path = path or (_REPO_ROOT / ".env")
-    if not path.is_file():
-        return False
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
-    return True
+USAGE_PATH = _CACHE_DIR / "classifier_usage.json"       # one record per API response
+HARD_FAILURE_KINDS = {"auth", "not_found", "rate_limit", "no_key"}
+HARD_FAILURE_LIMIT = 3          # this many in a row switch the LLM off for the rest of the run
 
 SYSTEM_PROMPT = (
-    "You classify customer privacy requests. Decide whether the message is a "
-    "request to DELETE or ERASE the person's personal data / account. "
-    "Requests for data access, a copy/export, a correction, a marketing or "
-    "email opt-out, login help, or any request that explicitly says not to "
-    "delete or to keep the account are NOT deletion requests. "
-    'Reply with strict JSON: {"is_deletion": true|false, "confidence": 0.0-1.0, '
-    '"reason": "<short reason>"}.'
+    "You classify customer privacy requests, which may be written in any language. Decide whether "
+    "the message authorizes DELETION or ERASURE of the person's personal data or account. "
+    "Requests for data access, a copy or export of data, a correction, a marketing or email "
+    "opt-out, login help, or any request that explicitly says not to delete or to keep the "
+    "account are NOT deletion requests. Return is_deletion, a confidence between 0 and 1, and a "
+    "short reason in English."
 )
+RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {"is_deletion": {"type": "boolean"},
+                   "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                   "reason": {"type": "string"}},
+    "required": ["is_deletion", "confidence", "reason"],
+}
 
 # -- deterministic fallback signals ---------------------------------------- #
 # Explicit statements that the person does NOT want deletion. Any of these is a
@@ -135,6 +131,9 @@ _DELETION_CUES = [
 ]
 
 
+_FALLBACK_NOTICE_SHOWN = False
+
+
 @dataclass
 class ClassifierResult:
     is_deletion: bool
@@ -172,22 +171,28 @@ def fallback_classify(text: str) -> ClassifierResult:
 
 
 class RequestClassifier:
-    def __init__(self, model: str = DEFAULT_MODEL, use_llm: bool | None = None):
-        load_dotenv()
-        self.model = model
+    def __init__(self, use_llm: bool | None = None):
+        llm_provider.load_dotenv()      # via the module, so tests can patch it
         self.llm_errors: list[str] = []
         self.cache_hits = 0
-        self._cache = self._load_cache()
-        self._api_key = (os.environ.get("ANTHROPIC_API_KEY")
-                         or os.environ.get("CLAUDE_API_KEY") or "")
-        if use_llm is None:
-            use_llm = bool(self._api_key)
-        self.use_llm = use_llm
-        self._client = None
-        # usage accounting for the usage report
-        self.calls = 0
+        self.calls = 0                    # API responses received this run (incl. unusable ones)
         self.input_tokens = 0
         self.output_tokens = 0
+        self.llm_disabled_reason = ""
+        self._hard_failures = 0
+        self._failed_keys: set[str] = set()   # texts that failed this run: skipped, retried next run
+        if use_llm is None:
+            use_llm = llm_provider.is_configured()
+        self.use_llm = bool(use_llm) and llm_provider.is_configured()
+        self.provider = llm_provider.provider_name() if self.use_llm else "none"
+        self.model = llm_provider.model_for("classifier") if self.use_llm else ""
+        self._cache = self._load_cache()
+        global _FALLBACK_NOTICE_SHOWN
+        if not self.use_llm and not _FALLBACK_NOTICE_SHOWN:
+            _FALLBACK_NOTICE_SHOWN = True
+            print("NOTICE: request classifier is running in FALLBACK mode "
+                  "(deterministic phrase rules, 0 model calls): no LLM provider key is configured "
+                  "(set GEMINI_API_KEY or ANTHROPIC_API_KEY).", file=sys.stderr)
 
     # -- cache -------------------------------------------------------------
     def _load_cache(self) -> dict:
@@ -200,67 +205,86 @@ class RequestClassifier:
         try:
             _CACHE_DIR.mkdir(parents=True, exist_ok=True)
             _CACHE_PATH.write_text(json.dumps(self._cache, indent=0), encoding="utf-8")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"WARNING: could not save classifier cache: {e}", file=sys.stderr)
 
     def _key(self, text: str) -> str:
         h = hashlib.sha256()
-        h.update(_norm(text).encode("utf-8"))
-        h.update(b"\x00")
-        h.update(self.model.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(PROMPT_VERSION.encode("utf-8"))
+        for part in (_norm(text), self.provider, self.model, PROMPT_VERSION):
+            h.update(part.encode("utf-8"))
+            h.update(b"\x00")
         return h.hexdigest()
 
-    # -- llm ---------------------------------------------------------------
-    def _record_usage(self, rec: dict) -> None:
+    # -- usage ---------------------------------------------------------------
+    def _record_usage(self, usage: dict, text: str, ok: bool, kind: str = "") -> None:
+        """Persist what the API reported, one record per API response (a truncation retry is its
+        own record). Failed-but-answered responses are recorded too: their tokens were billed.
+        Nothing is estimated."""
+        attempts = usage.get("attempts") or [{**usage, "ok": ok, "failure": kind, "retry": False}]
+        sha = hashlib.sha256(_norm(text).encode()).hexdigest()
+        recs = []
+        for a in attempts:
+            self.calls += 1
+            self.input_tokens += a.get("input_tokens") or 0
+            self.output_tokens += a.get("output_tokens") or 0
+            rec = {k: a.get(k) for k in ("provider", "model", "requested_model", "input_tokens", "output_tokens",
+                                         "usage_reported", "max_output_tokens")}
+            rec.update({"ok": a.get("ok"), "failure": a.get("failure") or "", "retry": bool(a.get("retry")),
+                        "prompt_version": PROMPT_VERSION, "ts": int(time.time()), "text_sha256": sha})
+            recs.append(rec)
         try:
             _CACHE_DIR.mkdir(parents=True, exist_ok=True)
             data = json.loads(USAGE_PATH.read_text(encoding="utf-8")) if USAGE_PATH.exists() else []
-            data.append(rec)
+            data.extend(recs)
             USAGE_PATH.write_text(json.dumps(data, indent=0), encoding="utf-8")
-        except Exception as e:  # usage is a deliverable: do not lose it silently
+        except Exception as e:  # usage is a deliverable: never lose it silently
             print(f"WARNING: could not record classifier usage: {e}", file=sys.stderr)
 
+    # -- llm ---------------------------------------------------------------
     def llm_verdict(self, text: str) -> ClassifierResult | None:
-        """Raw LLM verdict (no override), cached by sha256(text+model+prompt).
-        Returns None when no key is configured or the call fails (error recorded
-        in ``self.llm_errors`` and printed to stderr; the key is never included)."""
+        """Raw LLM verdict (no override). Served from the cache when present; otherwise one call
+        through llm_provider. Returns None when no provider is configured or the call produced
+        nothing usable (the reason is in ``llm_errors`` and on stderr); None is never cached."""
+        if not self.use_llm:
+            return None
         key = self._key(text)
         c = self._cache.get(key)
         if c is not None:
             self.cache_hits += 1
             return ClassifierResult(c["is_deletion"], c["confidence"], c["reason"], "llm")
-        if not self.use_llm:
+        if self.llm_disabled_reason or key in self._failed_keys:
             return None
         try:
-            if self._client is None:
-                import anthropic  # lazy; only when a key is present
-                self._client = anthropic.Anthropic(api_key=self._api_key)
-            msg = self._client.messages.create(
-                model=self.model, max_tokens=200, system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": text}])
-            u = getattr(msg, "usage", None)
-            rec = {"model": getattr(msg, "model", None) or self.model,
-                   "input_tokens": getattr(u, "input_tokens", 0) or 0,
-                   "output_tokens": getattr(u, "output_tokens", 0) or 0,
-                   "text_sha256": hashlib.sha256(_norm(text).encode()).hexdigest(),
-                   "prompt_version": PROMPT_VERSION, "ts": int(time.time())}
-            self.calls += 1
-            self.input_tokens += rec["input_tokens"]
-            self.output_tokens += rec["output_tokens"]
-            self._record_usage(rec)
-            raw = "".join(getattr(b, "text", "") for b in msg.content)
-            data = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
-            res = ClassifierResult(bool(data["is_deletion"]), float(data.get("confidence", 0.5)),
-                                   str(data.get("reason", "")), "llm")
-        except Exception as e:
-            msg_ = f"{type(e).__name__}: {str(e)[:200]}"
-            self.llm_errors.append(msg_)
-            print(f"WARNING: LLM classification failed, using fallback ({msg_})", file=sys.stderr)
+            parsed, usage = llm_provider.complete_json(SYSTEM_PROMPT, text, RESPONSE_SCHEMA)
+        except LLMFailure as f:
+            self._failed_keys.add(key)
+            if f.usage is not None:
+                self._record_usage(f.usage, text, False, f.kind)
+            self.llm_errors.append(f"{f.kind}: {f.message[:160]}")
+            print(f"WARNING: LLM classification skipped, using fallback for this text ({f.kind}: {f.message[:160]})",
+                  file=sys.stderr)
+            if f.kind in HARD_FAILURE_KINDS:
+                self._hard_failures += 1
+                if self._hard_failures >= HARD_FAILURE_LIMIT:
+                    self.llm_disabled_reason = f"{HARD_FAILURE_LIMIT} consecutive '{f.kind}' failures"
+                    print(f"WARNING: LLM switched off for the rest of this run ({self.llm_disabled_reason}); "
+                          f"remaining texts use the fallback. Fix the cause and re-run: cached verdicts are kept.",
+                          file=sys.stderr)
+            else:
+                self._hard_failures = 0
             return None
+        except Exception as e:  # a bug must not crash the whole run
+            self._failed_keys.add(key)
+            self.llm_errors.append(f"unexpected {type(e).__name__}")
+            print(f"WARNING: unexpected {type(e).__name__} from the LLM layer; using fallback", file=sys.stderr)
+            return None
+        self._hard_failures = 0
+        self._record_usage(usage, text, True)
+        res = ClassifierResult(bool(parsed["is_deletion"]), float(parsed["confidence"]),
+                               str(parsed["reason"]), "llm")
         self._cache[key] = {"is_deletion": res.is_deletion, "confidence": res.confidence,
-                            "reason": res.reason}
+                            "reason": res.reason, "provider": usage.get("provider"),
+                            "model": usage.get("model")}
         self._save_cache()
         return res
 

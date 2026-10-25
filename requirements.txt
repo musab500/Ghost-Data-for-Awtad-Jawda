@@ -1,0 +1,4 @@
+# Runtime dependencies. Both are optional: without any API key the pipeline runs in deterministic
+# fallback mode and the provider tests that need an SDK are skipped.
+google-genai==2.33.0   # Gemini (default provider when GEMINI_API_KEY is set)
+anthropic==2.3.0       # Anthropic (used when LLM_PROVIDER=anthropic or only ANTHROPIC_API_KEY is set)
