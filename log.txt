@@ -647,3 +647,24 @@ branch=person-a
 repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
+
+## [2026-10-25T04:10:00Z] Real Gemini run on 11 screenshots: results, STOP for decision
+
+User Prompt (verbatim, secrets redacted):
+Run check_env --list, --ping, the real multimodal run on the 11 screenshots with MULTIMODAL_ALLOW_MANUAL=0 (one run only), compare VLM vs manual, STOP if any file has 0 records or failed truncation; do not regenerate output.csv. (Gemini key supplied in a follow-up message: [REDACTED])
+
+Agent Response Summary:
+Ran the single real run: 10 of 11 files processed (no truncation, no retries, no 0-record file); evidence_28 failed with 503 UNAVAILABLE x3 and has no result. Compared against manual transcriptions and the pipeline output (offline, no classifier calls): VLM-vs-manual differences change 3 rows (case_34, case_46, case_55) plus case_53 from the missing file. Stopped before NOTES.md, freezing, dry run and commit to ask the user for decisions.
+
+Actions:
+* python3 tools/compare_multimodal.py --run --out code/evaluation/multimodal_comparison.md
+* LLM_PROVIDER=none python3 tools/compare_multimodal.py --pipeline-diff
+* offline main.py runs (manual-only vs hybrid) in scratchpad; nothing committed, output.csv untouched
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
