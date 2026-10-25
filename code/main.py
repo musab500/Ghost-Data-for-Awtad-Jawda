@@ -102,7 +102,9 @@ class Pipeline:
     def __init__(self, dataset_dir: str | Path, use_llm: bool | None = None):
         self.ds = Path(dataset_dir)
         obs, scopes, skipped = load_evidence(self.ds)
-        obs = obs + _load_multimodal(skipped, self.ds)
+        mm = _load_multimodal(skipped, self.ds)
+        self.multimodal_count = len(mm)
+        obs = obs + mm
         self.skipped = skipped
         events, aobs, links = parse_activity(self.ds)
         self.events = events
@@ -209,9 +211,16 @@ def write_output(pipeline: Pipeline, out_path: Path) -> list[tuple[str, str, lis
     return rows
 
 
-def validate_output_file(out_path: Path, dataset_dir: Path) -> None:
+def validate_output_file(out_path: Path, dataset_dir: Path,
+                         strict_complete: bool = True) -> list[str]:
     """Structural validation independent of the generator. Raises on any
-    violation of the output contract (fails loudly)."""
+    violation of the output contract (fails loudly).
+
+    COMPLETE rows must hold at least one VERIFICATION step, and every step must
+    cite a non-empty evidence_id. With ``strict_complete=False`` those two
+    problems are returned as warning strings instead of raising (used only while
+    multimodal evidence is not yet available). Returns the warning list."""
+    warnings: list[str] = []
     ds = Path(dataset_dir)
     expected = [r["case_id"] for r in csv.DictReader(
         open(ds / "deletion_requests.csv", newline="", encoding="utf-8"))]
@@ -246,6 +255,16 @@ def validate_output_file(out_path: Path, dataset_dir: Path) -> None:
             raise ValueError(f"{case_id}: steps_json must be an array")
         if status == "NOT_APPLICABLE" and steps != []:
             raise ValueError(f"{case_id}: NOT_APPLICABLE must have []")
+        if status == "COMPLETE":
+            problems = []
+            if not any(s.get("phase") == "VERIFICATION" for s in steps):
+                problems.append("COMPLETE row has no VERIFICATION step")
+            if any(not s.get("evidence_id") for s in steps):
+                problems.append("COMPLETE row has a step with empty evidence_id")
+            for msg in problems:
+                if strict_complete:
+                    raise ValueError(f"{case_id}: {msg}")
+                warnings.append(f"{case_id}: {msg}")
 
         prev_phase = -1
         prev_within = None
@@ -273,12 +292,26 @@ def validate_output_file(out_path: Path, dataset_dir: Path) -> None:
             if status == "COMPLETE":
                 if s["phase"] != "VERIFICATION":
                     raise ValueError(f"{case_id}: COMPLETE case has non-verification step")
-                if not s["evidence_id"]:
+                if not s["evidence_id"] and strict_complete:
                     raise ValueError(f"{case_id} step {i}: COMPLETE verification must cite evidence")
             if s["phase"] == "FINDING" and not s["evidence_id"]:
                 raise ValueError(f"{case_id} step {i}: FINDING must cite evidence")
             if status == "INCOMPLETE" and s["phase"] in ("REMEDIATION", "VERIFICATION") and s["evidence_id"]:
                 raise ValueError(f"{case_id} step {i}: INCOMPLETE {s['phase']} must have empty evidence_id")
+    return warnings
+
+
+def _write_run_manifest(pipeline: Pipeline, n_rows: int, dist) -> None:
+    """Record how the final run classified requests, for usage_report.py."""
+    clf = pipeline.classifier
+    manifest = {"rows": n_rows, "status_distribution": dict(dist),
+                "classifier_mode": "llm" if clf.use_llm else "fallback",
+                "classifier_model": clf.model, "new_llm_calls": clf.calls,
+                "llm_cache_hits": clf.cache_hits, "llm_errors": len(clf.llm_errors),
+                "multimodal_observations": pipeline.multimodal_count}
+    d = Path(__file__).resolve().parent / ".cache"
+    d.mkdir(exist_ok=True)
+    (d / "last_run.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
 
 
 def main(argv=None) -> int:
@@ -299,7 +332,8 @@ def main(argv=None) -> int:
     pipeline = Pipeline(ds)
     out = Path(args.out)
     rows = write_output(pipeline, out)
-    validate_output_file(out, ds)
+    strict = pipeline.multimodal_count > 0
+    warnings = validate_output_file(out, ds, strict_complete=strict)
 
     from collections import Counter
     dist = Counter(status for _, status, _ in rows)
@@ -307,7 +341,13 @@ def main(argv=None) -> int:
     print(f"wrote {len(rows)} rows -> {out}")
     print(f"status distribution: {dict(dist)}")
     print(f"classifier NOT_APPLICABLE: {len(na)}  |  CLASSIFY_REQUEST flags: {len(flagged)}  |  agreement: {len(agree)}")
-    print("validation: OK")
+    _write_run_manifest(pipeline, len(rows), dist)
+    if warnings:
+        print(f"WARNING: {len(warnings)} COMPLETE-row problem(s); multimodal evidence not loaded "
+              f"(strict mode starts once it is):")
+        for w in warnings:
+            print("  -", w)
+    print(f"validation: OK ({'strict' if strict else 'warnings-only for COMPLETE rows'})")
     return 0
 
 

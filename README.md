@@ -1,252 +1,142 @@
-# HackerRank Orchestrate - October 2026
+# Ghost Data Still Exists — Deletion-Audit Agent
 
-## Ghost Data Still Exists
+HackerRank Orchestrate (October 2026). The full task statement is in
+[`problem_statement.md`](./problem_statement.md).
 
-Build an AI agent that audits whether a user's personal data was actually deleted.
+## What the agent does
 
-A deletion workflow may report **Complete** while data still exists in databases, logs, support attachments, exports, search indexes, archives, or backups. Sync and restore processes may also bring deleted data back.
+For every request in `dataset/deletion_requests.csv` (518 cases) the agent:
 
-For each request, the agent must first determine whether deletion was actually requested. It then returns `COMPLETE`, `INCOMPLETE`, or `NOT_APPLICABLE`, reports any remaining data or recreation risk, and produces the ordered remediation and verification steps required to finish an authorized deletion safely.
+1. decides whether the person actually asked for deletion (a data copy, a
+   correction, a marketing opt-out or login help is `NOT_APPLICABLE`);
+2. resolves the person's stable `user_id` and every current and historical
+   identifier (emails, phones, email hashes);
+3. finds every record that mentions them in the supplied evidence (SQL
+   snapshots, JSON, logs, text, PDFs, screenshots) and the activity stream;
+4. reconstructs each record's state **at the case's `audit_at`**, ignoring later
+   evidence and treating `reported_status` and activity results as claims;
+5. applies `deletion_rules.csv` (delete, redact, anonymize, retain, tombstone,
+   plus active data flows and restorable backups);
+6. returns `COMPLETE`, `INCOMPLETE` or `NOT_APPLICABLE` with the ordered
+   findings, remediation plan and verification checks, and writes `output.csv`.
 
-Read [`problem_statement.md`](./problem_statement.md) for the complete challenge contract.
+## Architecture
 
----
+```
+deletion_requests.csv ─► classifier.py ── not a deletion ──► NOT_APPLICABLE, []
+                          (LLM, optional)                     
+                          + negation override                
+                          + deterministic fallback
+                                │ deletion
+                                ▼
+ user_identities.csv ─►  identity.py ─► Identity (emails, phones, hashes,
+ user_audit_log.csv                      sha256(lower(email)) of every email)
+                                │
+ dataset/evidence/* ─► parsers/* (+ multimodal.py: PDF/PNG ─► Observations)
+ system_activity.csv ─►          │
+                                 ▼
+                         state.EvidenceIndex
+                           direct_links(identity)   resources carrying an identifier
+                           assign_workflow(all)     identifier-less resources, matched globally
+                           state_at(resource, audit_at)
+                                 │
+                                 ▼
+                         rules.decide(state)  ─►  finding / remediation / verification
+                                 │
+                                 ▼
+                         steps.assemble_steps ─► ordered steps_json
+                                 │
+                                 ▼
+                         main.write_output ─► output.csv ─► validate_output_file
+```
 
-## Quick Start
+### Where a model is used, and why the rest is deterministic
 
-Clone the repository and move into the project directory:
+| Stage | Method | Reason |
+|---|---|---|
+| Request classification | LLM (`classifier.py`) with a negation override and a deterministic fallback | Requests are free text in about ten languages and keyword matching misses negation |
+| Images (PNG) | Vision model, results cached as JSON (`multimodal.py`, Person A) | Screenshots have no text layer. PDFs are read with `pdftotext`, no model |
+| Identity, parsing, temporal state, policy, ordering, validation | Plain Python | Exact matching, timestamps and rule application must be reproducible and auditable |
+
+The model never decides state, policy or step order.
+
+### Modules
+
+| Path | Purpose |
+|---|---|
+| `code/main.py` | Pipeline, `output.csv` writer, output validator |
+| `code/identity.py` | Identity resolution |
+| `code/classifier.py` | Deletion classifier, cache, usage log |
+| `code/steps.py` | Step assembly and ordering |
+| `code/models.py`, `code/parsers/*`, `code/state.py`, `code/rules.py` | Evidence model, parsers, state at `audit_at`, policy engine |
+| `code/evaluation/main.py` | Sample evaluation and custom cases (`custom_cases/`) |
+| `code/evaluation/classifier_eval.py` | LLM vs fallback vs combined classifier report |
+| `code/evaluation/usage_report.py` | Builds `usage_report.md` from recorded API usage |
+| `code/tests/` | Unit tests for parsers, state and rules |
+
+## Setup
+
+- Python 3.10 or newer (developed on 3.13). The pipeline uses only the standard library.
+- Optional, for the LLM classifier: `pip install anthropic`.
+- Optional, for tests: `pip install pytest`.
+- `pdftotext` (poppler-utils) is used for PDFs when multimodal extraction runs.
+
+Environment variables (read from the environment or a gitignored `.env` file in
+the repository root; they are never printed or logged):
+
+| Variable | Purpose |
+|---|---|
+| `ANTHROPIC_API_KEY` | Enables the LLM classifier (and the vision step). Without it the deterministic fallback is used |
+| `GHOST_CLASSIFIER_MODEL` | Override the classifier model (default `claude-haiku-5-5`) |
+
+Example `.env` (never commit it; it is in `.gitignore`):
+
+```
+ANTHROPIC_API_KEY=your-key-here
+```
+
+## Commands
+
+Run everything from the repository root.
 
 ```bash
-git clone https://github.com/interviewstreet/hackerrank-orchestrate-october26.git
-cd hackerrank-orchestrate-october26
-```
-
-Start your AI coding tool from the **repository root** so it automatically reads [`AGENTS.md`](./AGENTS.md) and logs your session turns to `log.txt` in the root directory.
-
-Build your solution in `code/main.py`, or use another language and document its setup and run command clearly in your README.
-
-Your solution must:
-
-- Read the input files from `dataset/`
-- Generate one prediction row for every request in `dataset/deletion_requests.csv`
-- Write the final predictions to `output.csv` in the repository root
-
-Run the starter Python entry point with:
-
-```bash
-python3 code/main.py
-```
-
-The blank template at `dataset/output.csv` is provided as a reference. Your final generated file for submission must be the root-level `output.csv`.
-
-
-## Dataset
-
-All participant-facing files are in `dataset/`:
-
-| File | Contents |
-| --- | --- |
-| `deletion_requests.csv` | 518 requests |
-| `sample_deletion_requests.csv` | 32 sample requests |
-| `sample_output.csv` | Correct sample answers |
-| `user_identities.csv` | Current user identities |
-| `user_audit_log.csv` | Historical identity changes |
-| `system_activity.csv` | Activity across services and data processes |
-| `deletion_rules.csv` | Required treatment for each data category |
-| `evidence_files.csv` | Manifest of supplied evidence files |
-| `output.csv` | Blank output template |
-
-Evidence is stored under `dataset/evidence/` and may include PDFs, images, logs, JSON, plain text, or SQL snapshot exports. SQL captures may contain a primary database, regional replicas, a reporting replica, or a failover replica so replication drift can be investigated directly. The `.sql` files are readable as text and executable with SQLite.
-
-Only `deletion_requests.csv` requires answers. The other files provide evidence and context.
-
----
-
-## Output
-
-Create `output.csv` with these columns in this exact order:
-
-```text
-case_id,deletion_status,steps_json
-```
-
-Produce exactly one row per request. `deletion_status` is `COMPLETE`, `INCOMPLETE`, or `NOT_APPLICABLE`. `steps_json` is an ordered JSON array containing findings, remediation actions, and verification checks. Use an empty array (`[]`) for `NOT_APPLICABLE`. Evidence references may be a `file_id`, `activity_id`, or `audit_id`. Determine the resource state at `audit_at` from the available evidence; reported workflow statuses and operation results are claims. Use `dataset/sample_output.csv` as the format reference.
-
-The final file must contain 518 data rows sorted by `case_id` (plus the header row). The grader parses `steps_json` as JSON, so object-key order and whitespace do not matter; array order does. Order findings, remediation, and verification in that phase order. Within a phase, follow the operation order in the problem statement, then sort by `system_id` and `resource_id`.
-
----
-
-## Evaluation
-
-`output.csv` will be compared with hidden canonical answers. Scoring considers:
-
-- deletion assessment accuracy;
-- current and historical identity resolution;
-- discovery of remaining data and recreation risks;
-- correct policy application and evidence references; and
-- completeness and ordering of remediation and verification steps.
-
-Your `code.zip` must include:
-
-```text
-code/evaluation/evaluation_report.md
-code/evaluation/usage_report.md
-```
-
-- `evaluation_report.md` must cover case, row, field, and sequence accuracy, at least three additional evaluation cases created by you, failures found, and improvements made.
-- `usage_report.md` must cover the final full-dataset run, including model providers and names, model calls, input and output tokens, total and average tokens per request, and estimated total and per-request cost. Include per-model and overall totals when using multiple models.
-
-**Important:** Place `evaluation_report.md` and `usage_report.md` inside `code/evaluation/` (matching `code/evaluation/main.py` in this starter layout), write your complete evaluation metrics, custom evaluation test cases, and token/cost breakdowns directly inside those Markdown files, and keep prompts in source code or Markdown files. Automated code evaluation ignores raw data files (`.csv`, `.tsv`, `.json`, `.jsonl`, `.sql`, `.log`), so content stored only in those formats will not be visible to the code judge or AI interviewer.
-
----
-
-## Chat Transcript
-
-This repository includes [`AGENTS.md`](./AGENTS.md), which instructs compatible AI coding tools to append conversation summaries to `log.txt` in the repository root:
-
-| Platform | Path |
-| --- | --- |
-| macOS / Linux | `<repo root>/log.txt` |
-| Windows | `<repo root>\log.txt` |
-
-- Always launch your AI coding agent from the repository root (or explicitly ask it to read `./AGENTS.md` first) so every turn is logged to `log.txt` with the required `User Prompt`, `Agent Response Summary`, `Actions`, and `Context` sections.
-- Upload `log.txt` directly as your `chat_transcript` submission on HackerRank.
-- Do not include API keys, tokens, credentials, or secrets in prompts, code, configuration, or `log.txt`.
-
----
-
-## Packaging `code.zip` and Submission
-
-| Item | Description |
-| --- | --- |
-| `code.zip` | Runnable solution, prompts, configuration, `README.md`, and `evaluation/` reports |
-| `output.csv` | One answer row for each of the 518 requests in `dataset/deletion_requests.csv` |
-| `chat_transcript` | The root `log.txt` file generated by your coding agent |
-| AI interview | Live explanation of your architecture, approach, and evaluation |
-
-You may use any programming language, model, framework, or retrieval approach. Include clear setup and execution instructions in `README.md` inside `code.zip`.
-
-To package `code.zip` from the repository root without bundling the dataset:
-
-**macOS / Linux:**
-
-```bash
-zip -r code.zip README.md code -x "*/__pycache__/*" "*/.venv/*" "*/venv/*" "*/node_modules/*" "*/.git/*" "*/.DS_Store"
-```
-
-**Windows (PowerShell):**
-
-```powershell
-Compress-Archive -Path README.md, code -DestinationPath code.zip -Force
-```
-
-When packaging `code.zip`:
-
-- Keep your evaluation reports in `code/evaluation/` so they are bundled automatically with `code` (or add `evaluation` to the archive command above if you placed them in a top-level `evaluation/` directory).
-- Do **not** include `dataset/`, virtual environments (`.venv`, `venv`, `node_modules`), or build caches (`__pycache__`). On Windows, keep `.venv` at the repository root (outside `code/`) and remove any `code/__pycache__` folders before running `Compress-Archive`.
-- Do **not** include nested archives (`.zip`, `.tar`, `.gz`, `.tgz`, `.7z`, `.rar`) inside `code.zip` — submissions containing nested archive files will be rejected.
-
-Before submitting, confirm that:
-
-- `output.csv` has the exact header `case_id,deletion_status,steps_json` and contains all 518 data rows sorted by `case_id`;
-- every `steps_json` value is a valid JSON array with consecutive step numbers starting at `1`;
-- findings cite valid evidence IDs, and `COMPLETE` verification steps cite evidence proving the current state;
-- proposed remediation and future verification steps use an empty `evidence_id` (`""`);
-- `code.zip` includes your runnable code, `README.md`, `code/evaluation/evaluation_report.md`, and `code/evaluation/usage_report.md`;
-- `log.txt` follows the `AGENTS.md` turn format and is uploaded to the `chat_transcript` slot; and
-- no API keys, credentials, real personal data, or sensitive configuration values are included.
-
----
-
-## Solution — Our Implementation
-
-An evidence-based deletion-audit agent with a **deterministic core** and a model
-used **only** for one task (request classification), with a deterministic
-fallback so the whole pipeline runs with no API key.
-
-### Setup
-
-```bash
-python3 --version              # developed on Python 3.13; standard library only
-# optional: unit tests use pytest
-python3 -m pip install pytest
-```
-
-No third-party runtime dependencies are required to produce `output.csv`. The
-optional LLM classifier uses the `anthropic` SDK if installed and a key is set.
-
-### Run
-
-```bash
-# Produce the submission output.csv (518 rows) at the repo root, then validate it:
-python3 code/main.py
-
-# Validate an existing output.csv without regenerating:
+python3 code/main.py                          # writes ./output.csv (518 rows) and validates it
 python3 code/main.py --validate-only output.csv
-
-# Evaluate against the 32 public samples + team-authored cases:
-python3 code/evaluation/main.py
-
-# Unit tests (Person A's parser/state/rules suite):
+python3 code/evaluation/main.py               # 32 samples + custom cases, with a regression guard
+python3 code/evaluation/classifier_eval.py    # needs a key; fills the classifier section of the report
+python3 code/evaluation/usage_report.py       # rewrites evaluation/usage_report.md from recorded usage
 PYTHONPATH=code python3 -m pytest code/tests/ -q
 ```
 
-### Environment variables (all optional, read from env only — never committed)
+## Outputs and caching
 
-| Variable | Effect |
-|---|---|
-| `ANTHROPIC_API_KEY` / `CLAUDE_API_KEY` | Enables the LLM request classifier. Unset → deterministic fallback (the mode used for the submitted `output.csv`). |
-| `GHOST_CLASSIFIER_MODEL` | Override the classifier model (default `claude-haiku-5-5`). |
+- `output.csv` (repository root): `case_id,deletion_status,steps_json`, sorted by `case_id`.
+- `code/evaluation/evaluation_report.md` and `code/evaluation/usage_report.md`.
+- `code/.cache/` (gitignored, created at run time):
+  - `classifier.json`: raw LLM verdicts keyed by `sha256(text + model + prompt version)`, so each unique request text is sent once;
+  - `classifier_usage.json`: one record per real API call (model, input and output tokens);
+  - `last_run.json`: how the latest `main.py` run classified requests.
 
-### Architecture
+`main.py` validates its own output and fails loudly on any contract violation: header, row count,
+sort order, JSON, consecutive `step_no`, phase and operation order, evidence citation rules. A `COMPLETE`
+row must contain a verification step and every step must cite evidence. Until multimodal evidence is
+loaded these two checks print warnings instead of failing; once it is loaded they are errors.
 
-```
-request ─► classifier.py ──not deletion──► NOT_APPLICABLE, []
-             │ (LLM optional + deterministic negation/intent fallback)
-             ▼ deletion
-         identity.py ─► Identity (current + historical emails/phones,
-             │           email hashes, sha256(lower(email)) of every email)
-             ▼
-         state.EvidenceIndex.direct_links ∪ assign_workflow   (Person A)
-             │   evidence from parsers/* (+ multimodal.py hook, Person A)
-             ▼
-         state.state_at(resource, audit_at)  ─►  rules.decide(...)   (Person A)
-             │   true state at the audit cutoff; reported statuses are claims
-             ▼
-         steps.assemble_steps  ─►  ordered findings → remediation → verification
-             ▼
-         main.write_output  ─►  output.csv  ─►  main.validate_output_file (loud)
-```
+## Known limitations
 
-Key properties:
+- The 32 public samples cannot measure accuracy on the 518 hidden cases.
+- **case_03 / case_44 (analytics_9406 vs analytics_5589)** and **case_27 / case_28 (analytics_4574 vs
+  analytics_6077)**: the anonymisations are seconds apart, no evidence carries an identifier and the
+  activity order alternates. Fitting the remaining signal would be fitting noise.
+- **case_23 (account_410 vs account_7015)**: both accounts are FAILED and both are citable only through
+  snapshot omission. Nothing separates them.
+- **case_04 (account_004)** appears in no evidence file and no activity row; the only link is a
+  naming coincidence, which is not used.
+- **case_18 (audit_record_6645) and case_20 (audit_record_5569)** appear in no participant file and cannot be predicted.
+- Records that exist only in PDFs or screenshots depend on `multimodal.py`; when it is absent they are
+  missed (for example case_07, and the `COMPLETE` rows with empty steps flagged by the validator).
+- The classifier fallback is a phrase list. It matches the supplied requests but is not a general
+  multilingual intent model; that is what the LLM path is for.
 
-- **Identity** (`identity.py`): resolves 518/518 request emails (100 via the
-  audit log), including historical email-hash links such as `case_12`.
-- **Temporal correctness**: state is reconstructed strictly at `audit_at`;
-  evidence captured or observed later is never used (see the `temporal_cutoff`
-  custom case).
-- **Policy** (`rules.py`, Person A): DELETE / REDACT / ANONYMIZE / RETAIN /
-  tombstone and recreation paths (data flow, backup restore) from
-  `deletion_rules.csv`.
-- **Classifier** (`classifier.py`): deletion vs non-deletion; cached by
-  `sha256(text+model+prompt_version)`; cross-checked against the
-  `CLASSIFY_REQUEST` flags (10/10 agreement, used as a check only).
-- **Validation** (`main.validate_output_file`): independent structural re-check
-  of every output row; raises on any contract violation.
-
-### File ownership
-
-- **Person B (this work):** `code/identity.py`, `code/classifier.py`,
-  `code/steps.py`, `code/main.py`, `code/evaluation/main.py`,
-  `code/evaluation/custom_cases/*`, `code/evaluation/evaluation_report.md`,
-  `code/evaluation/usage_report.md`, this README section.
-- **Person A:** `code/models.py`, `code/parsers/*`, `code/state.py`,
-  `code/rules.py`, `code/multimodal.py`, `code/tests/*`, `tools/sample_harness.py`.
-
-### Results (see `code/evaluation/evaluation_report.md`)
-
-- Sample status accuracy **31/32**, exact sequence **24/32**, step **P=0.973 /
-  R=0.943 / F1=0.958**.
-- Full `output.csv`: 518 rows — 162 COMPLETE, 346 INCOMPLETE, 10 NOT_APPLICABLE.
-- Final run model spend: **0 calls, $0** (deterministic fallback); see
-  `code/evaluation/usage_report.md`.
+Details of the parsers' findings and integration contract: [`code/parsers/NOTES.md`](./code/parsers/NOTES.md).
+Current evaluation numbers: [`code/evaluation/evaluation_report.md`](./code/evaluation/evaluation_report.md).
