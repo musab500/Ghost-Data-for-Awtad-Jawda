@@ -77,12 +77,15 @@ resource_aliases(events) -> dict[str, tuple[str, str]]        # business key -> 
 multimodal_observations(skipped_files, aliases, cache_dir=CACHE_DIR, log=sys.stderr) -> list[Observation]
 # state.py
 EvidenceIndex(observations, scopes, links=(), events=())
-    .direct_links(identity: Identity, not_before: str | None, audit_at: str | None)
-        -> dict[str, list[str]]  # resource_id -> reasons; not_before = audit_at of the person's previous request
+    .link_requests(refs: list[RequestRef]) -> dict[str, dict[str, list[str]]]
+        # case_id -> {resource_id: reasons}; groups ALL requests by user_id and applies the evidence windows
+    .direct_links(identity, not_before, audit_at, has_later_request)   # one request; used by link_requests
     .category_of(resource_id) -> str | None
     .assign_workflow(cases: list[CaseWindow]) -> dict[str, dict[str, str]]  # case_id -> {rid: reason}
     .state_at(resource_id, audit_at) -> ResourceState
     .evidence_tier(resource_id, audit_at) -> int               # 0 explicit, 1 snapshot-only, 2 none
+RequestRef(case_id, identity | None, audit_at, requested_at="")
+request_windows(refs) -> {case_id: (not_before | None, has_later_request)}
 CaseWindow(case_id, reported_at, audit_at, direct_categories: set, reported_status: str,
            expects_complete: bool, direct_resources: set)
 flagged_cases(direct_by_case, flags) -> dict[str, str]         # case_id -> activity_id
@@ -106,12 +109,10 @@ models.py. identity.py must include the following (see finding 1 above):
    `obs += multimodal_observations(skipped, resource_aliases(events))`.
 3. `idx = EvidenceIndex(obs + act_obs, scopes, links, events)`, built once.
    `rules = load_rules(ds)`.
-4. Resolve an `Identity` for **every** request, samples and evaluation together.
-   Then compute `direct[c] = idx.direct_links(identity, prev_audit[c], audit_at)`.
-   Here `prev_audit[c]` is the audit_at of the same person's previous request,
-   ordered by audit_at, or None. Some people have two requests (e.g.
-   case_46 / case_17). Evidence that predates the earlier request's audit
-   belongs to that request.
+4. Resolve an `Identity` for **every** request, samples and evaluation together,
+   then `direct = idx.link_requests([RequestRef(c, identity[c], audit_at, requested_at) ...])`
+   in ONE call over all requests. It groups them by resolved user_id and applies
+   the per-person evidence windows described under "Per-person request windows".
 5. For each case, compute
    `expects_complete = not any(decide(idx.state_at(r, audit), rules, audit).violates for r in direct[c])`.
    Skip None decisions.
@@ -151,52 +152,99 @@ its `expected_output.csv`. The format is described in that folder's README.
   * `legal_retention_register_20260529.pdf` lists order refs and user_ids but no
     resource ids, so it emits **nothing**. This is consistent with the gold
     answers for cases 08, 12, 17 and 21, none of which has a legal-hold step.
-* **PNGs:** one vision call per file through the `anthropic` SDK.
-  * Model: `MULTIMODAL_MODEL`, default `claude-opus-5-5`, called with the
-    server-side refusal fallback, effort low and a JSON-schema output format.
-  * The key is read from `ANTHROPIC_API_KEY` only.
-  * Each result is validated: state and category must be in the allowed
-    vocabularies, and every record must name a resource id or an alias.
-  * Results are cached in `code/.cache/multimodal/<sha256(file bytes + model +
-    prompt version)>.json` (gitignored), so re-runs make zero calls.
-* **Usage:** every run writes `code/.cache/multimodal_usage.json`. It holds the
-  real API calls of that run (served model, input and output tokens, stop
-  reason) and how each file was satisfied. `usage_report.md` should read it.
-* **Hook:** `main.py`'s `_load_multimodal` calls
-  `multimodal_observations(skipped, dataset_dir)`. Given a directory, the
-  function builds the catalog alias map from that dataset's activity file.
-* **No API key in this environment.** The 11 PNGs are therefore covered by
-  committed transcriptions in `code/multimodal_manual/`, marked
-  `"method": "manual_transcription"`. This Claude Code
-  session (claude-opus-5-5) viewed each screenshot with its image reader and
-  transcribed it into the same record schema. These were **not API calls**, so
-  token usage is recorded as `null`, not estimated. To replace them, run with
-  `ANTHROPIC_API_KEY` set and `MULTIMODAL_ALLOW_MANUAL=0`.
-* **For the usage report:** the final run makes 0 API calls if every file is
-  cached. Say that the screenshots were transcribed manually in the dev
-  session, with no measurable token usage.
-* **Faithful-extraction choices that could cost precision:**
-  `security_audit_explorer` shows six audit records for user_03
-  (audit_record_001–006), and all six are emitted. All of them are within
-  retention, so case_45 verifies all six.
+* **PNGs:** one vision call per file with the `anthropic` SDK
+  (`client.messages.create`, strict JSON-schema output, `effort: low` on models
+  that support it, no beta features). The prompt is `VISION_PROMPT` in
+  `multimodal.py`. The model comes from `MULTIMODAL_MODEL` (default
+  `claude-opus-5-5`). Each result is validated: state and category must be in
+  `models.STATES` / `CATEGORIES`, and every record must name a resource id or a
+  catalog alias, otherwise it is dropped with a warning.
+* **Lookup order per file**, so re-runs make zero calls:
+
+  | # | Source | Notes |
+  |---|---|---|
+  | 1 | `code/.cache/multimodal/<sha256(bytes+model+prompt)>.json` | API results; gitignored |
+  | 2 | `code/multimodal_vlm/` | **frozen copies of API results, committed**, so `code.zip` reproduces the run without a key (`--freeze`) |
+  | 3 | `code/multimodal_manual/` | hand transcriptions made without the API; fallback only, with a warning; **ignored when `MULTIMODAL_ALLOW_MANUAL=0`** |
+  | 4 | API call | only if `ANTHROPIC_API_KEY` is set; the result goes to (1) |
+
+* **Key and settings** come from the environment or a `.env` file (repo root or
+  `code/`; see `.env.example`). Only `ANTHROPIC_API_KEY`, `MULTIMODAL_MODEL` and
+  `MULTIMODAL_ALLOW_MANUAL` are read from it, existing variables win, and values
+  are never printed. Without a key and a cached result, the file is skipped with
+  a warning.
+* **A failed API call never raises.** `main.py`'s hook turns any exception into
+  "no multimodal evidence at all", so errors, refusals and malformed JSON are
+  warnings and the file is skipped (a refusal or malformed response still counts
+  its tokens in the usage file).
+* **Usage:** `code/.cache/multimodal_usage.json` holds `api_calls_this_run` (served
+  model, input/output tokens, stop reason per call), `api_calls_count`, the token
+  sums, and `files_used` (how each file was satisfied). `cached_usage_total` sums
+  the real usage recorded when each cached API result was produced, so a re-run
+  with 0 calls still reports the one-time extraction cost. Nothing is estimated;
+  manual transcriptions and PDF text have no usage.
+
+### Real VLM run of the screenshots: status and procedure
+
+**Status: NOT YET RUN.** The session that built this had no `ANTHROPIC_API_KEY`,
+no `.env`, and could not be given one, so there is no VLM result and no
+comparison table yet. **No numbers are claimed here.** The comparison section of
+`evaluation_report.md` must wait for the run below.
+
+What *was* verified: the request path through the real SDK (anthropic 2.3.0)
+against a **local stub server** (`VisionCallViaStubServer` in
+`code/tests/test_multimodal.py`): request path, image block, JSON schema,
+`output_config`, auth header, response parsing, cache write, real-usage
+recording, zero calls on re-run, and error/refusal handling. A stub proves what
+we send and how we parse; it does **not** prove that the live API accepts the
+request. The first real call is the first such proof.
+
+**To run it** (needs `pip install anthropic` and a key in `.env` or the environment):
+
+```bash
+python3 tools/compare_multimodal.py --run --freeze --out code/evaluation/multimodal_comparison.md
+MULTIMODAL_ALLOW_MANUAL=0 python3 code/main.py          # final run: VLM results only
+python3 tools/compare_multimodal.py --pipeline-diff     # did any of the 518 rows change vs manual?
+```
+
+`--run` makes at most one call per PNG (11) with manual transcriptions
+forbidden; `--freeze` copies the API results into `code/multimodal_vlm/` (commit
+them); the report lists per file the records matched / missing / extra and the
+field mismatches (`observed_at` differences are shown but do not change
+pipeline output).
+
+**Why `MULTIMODAL_ALLOW_MANUAL` still defaults to fallback-on.** Measured on the
+518 rows (`--pipeline-diff` with no VLM result available): forbidding the manual
+transcriptions changes **12 rows (2.3%)**, and **8 of them flip from INCOMPLETE to
+a wrong COMPLETE** (cases 35, 39, 50, 52, 53, 55, 61 and 63; case_45/46/33/34
+lose steps). A default of 0 before the VLM results are frozen would silently
+degrade the shipped output and make a clean `code.zip` run differ from
+`output.csv`. Once `code/multimodal_vlm/` is committed, lookup order guarantees
+the VLM result is used whenever it exists, and the final run uses
+`MULTIMODAL_ALLOW_MANUAL=0` to make that strict. Flipping the default to 0 is then
+a one-line change in `_cached_entry`.
 
 ### Pending change in Person B's files: `tools/patches/person_b_integration.patch`
 
-`git apply tools/patches/person_b_integration.patch` makes two changes:
-1. **`code/main.py` passes the per-person request windows to `direct_links`**,
-   as `(previous request's audit_at, this audit_at, has a later request)`.
-   Without them, image/PDF evidence about one request of a person leaks into
-   their other request (e.g. leonie: case_46 March / case_17 August).
+`git apply tools/patches/person_b_integration.patch`, then regenerate `output.csv`.
+It changes two things:
+1. **`code/main.py`** replaces the per-case `direct_links(ident)` loop with one
+   `self.idx.link_requests([RequestRef(...), ...])` call (about 10 lines). Without
+   the windows, evidence about one request of a person leaks into their other
+   request: case_07 gets object_19 and case_17 gets tombstone_17.
 2. **`code/evaluation/main.py`'s baseline guard uses `>=` instead of `==`.** It
-   asserted `status == 31`, so the improvement to 32/32 crashed it.
+   asserted `status == 31`, so any improvement crashes it.
 
 Measured through Person B's `evaluate_samples` on the 32 samples:
 
 | State | Status | Exact | P | R | F1 | Field acc. |
 |---|---|---|---|---|---|---|
-| main before multimodal | 31/32 | 24/32 | 0.973 | 0.943 | 0.958 | 0.946 |
-| + multimodal.py (this branch, patch not applied) | 32/32 | 23/32 | 0.959 | 0.964 | 0.961 | 0.934 |
-| + patch applied | **32/32** | **25/32** | **0.979** | **0.964** | **0.971** | **0.966** |
+| main (no windows) | 32/32 | 23/32 | 0.959 | 0.964 | 0.961 | 0.934 |
+| + patch (windows) | **32/32** | **25/32** | **0.979** | **0.964** | **0.971** | **0.966** |
+
+case_07 and case_17 become exact matches. Of the 518 output rows, **4 change**
+(case_33, case_46, case_52, case_61), all belonging to the three multi-request
+users below; the other 514 rows are byte-identical.
 
 ### Classifier cross-check (CLASSIFY_REQUEST)
 
@@ -209,6 +257,57 @@ copies, marketing opt-outs, login help.
 Use these flags only to **cross-check** the LLM classifier, and report the
 agreement in the evaluation report. They are a workflow claim, so do not let
 them override the classifier.
+
+## Per-person request windows (`state.request_windows`, `EvidenceIndex.link_requests`)
+
+**Problem.** Some people file more than one request (a deletion in March, another
+in August). Evidence about an earlier episode still exists later, and the
+catalog links it to the same person, so it would be repeated in the later request.
+Gold answers show it is not: object_19 (linked 2026-02-13) is not in case_07
+(requested 2026-08-31), and tombstone_17 (linked 2026-03-10) is not in case_17.
+
+**Grouping.** Requests are grouped by the resolved `Identity.user_id`
+(case-insensitive), never by email, since a person may use an old and a new
+address. Samples and evaluation requests are grouped **together**: in all three
+multi-request cases the earlier request is an evaluation case.
+
+**Windows.** For one person, let a_1 < ... < a_n be the distinct `audit_at` times
+of their requests. Request k owns linking evidence captured in
+
+    W_1 = (-inf, a_1]      W_k = (a_(k-1), a_k]      W_n = (a_(n-1), +inf)
+
+* **Upper bounds are inclusive**, consistent with "at or before audit_at". Lower
+  bounds are exclusive, so evidence captured exactly at a_(k-1) belongs to
+  request k-1.
+* **The last window is open-ended.** Evidence captured after the person's final
+  audit still identifies their records (identity is not state). `state_at` never
+  uses it to establish a state.
+* Requests of one person with the **same** `audit_at` share one window (none
+  occur in the data). A person with one request has no window.
+
+**Ownership: first linking evidence.** A linking event is the capture time of an
+observation, or the time of a catalog link (`LINK_RESOURCE_IDENTITY`), that
+carries one of the person's identifiers. A resource belongs to the request whose
+window contains its **earliest** linking event, and to no other request of that
+person. A resource first seen in window 1 and observed again in window 2 stays
+with request 1. Workflow-assigned resources (no identifiers) are matched by
+`reported_at` in `assign_workflow`, one resource per case, so they are not
+repeated either.
+
+**Alternative considered.** Keeping a resource for *every* request whose window
+holds *any* of its linking evidence gives the **same owners for every resource of
+all three multi-request users** in this data, so the choice changes no output.
+First-evidence ownership is used because it is one-to-one by construction.
+
+**Counts (32 samples + 518 evaluation = 550 requests):** 547 distinct user_ids;
+**3 user_ids have two requests**, 544 have one; 0 have three or more. 0 ties in
+`audit_at`; 0 use more than one distinct email.
+
+| user_id | Earlier request | Later request |
+|---|---|---|
+| user_07 | case_61 (eval), audit 2026-02-14 | case_07 (sample), audit 2026-09-12 |
+| user_17 | case_46 (eval), audit 2026-03-11 | case_17 (sample), audit 2026-09-15 |
+| user_18 | case_52 (eval), audit 2026-06-19 | case_33 (eval), audit 2026-07-19 |
 
 ## Workflow assignment (state.assign_workflow)
 

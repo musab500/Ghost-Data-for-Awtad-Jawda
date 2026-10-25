@@ -12,7 +12,7 @@ DATASET = CODE.parent / "dataset"
 
 from models import ActivityEvent, Identity, Observation, Scope  # noqa: E402
 from rules import decide, load_rules  # noqa: E402
-from state import CaseWindow, EvidenceIndex  # noqa: E402
+from state import CaseWindow, EvidenceIndex, RequestRef, request_windows  # noqa: E402
 
 RULES = load_rules(DATASET)
 AUDIT = "2026-09-15T12:00:00Z"
@@ -210,6 +210,83 @@ class Linking(unittest.TestCase):
         ], [])
         links = idx.direct_links(Identity("user_1", emails={"a@x.com"}))
         self.assertEqual(set(links), {"account_new"})
+
+
+class RequestWindows(unittest.TestCase):
+    """Per-person evidence windows: W_1=(-inf,a_1], W_k=(a_(k-1),a_k], W_n open-ended."""
+
+    def person(self, uid="user_1", emails=("a@x.com",)):
+        return Identity(uid, emails=set(emails))
+
+    def world(self, *evidence):
+        return EvidenceIndex([ob(rid, "s", None, "FOUND", t, "e", ["user_1", "a@x.com"]) for rid, t in evidence], [])
+
+    def test_resource_linked_in_first_window_appears_only_in_first_case(self):
+        idx = self.world(("export_early", "2026-03-10T00:00:00Z"), ("export_late", "2026-09-10T00:00:00Z"))
+        refs = [RequestRef("first", self.person(), "2026-03-15T00:00:00Z", "2026-03-01T00:00:00Z"),
+                RequestRef("second", self.person(), "2026-09-15T00:00:00Z", "2026-08-20T00:00:00Z")]
+        out = idx.link_requests(refs)
+        self.assertEqual(set(out["first"]), {"export_early"})
+        self.assertEqual(set(out["second"]), {"export_late"})
+
+    def test_grouping_is_by_user_id_not_email(self):
+        # Request 1 used the old address, request 2 the new one: same user_id.
+        old = self.person("USER_1", ["old@x.com", "new@x.com"])
+        new = self.person("user_1", ["old@x.com", "new@x.com"])
+        idx = EvidenceIndex([ob("export_early", "s", None, "FOUND", "2026-03-10T00:00:00Z", "e", ["old@x.com"])], [])
+        out = idx.link_requests([RequestRef("r1", old, "2026-03-15T00:00:00Z"),
+                                 RequestRef("r2", new, "2026-09-15T00:00:00Z")])
+        self.assertEqual((set(out["r1"]), set(out["r2"])), ({"export_early"}, set()))
+        # Two different people never interfere with each other's windows.
+        other = self.person("user_2", ["b@x.com"])
+        self.assertEqual(request_windows([RequestRef("r1", old, "2026-03-15T00:00:00Z"),
+                                          RequestRef("o", other, "2026-09-15T00:00:00Z")]),
+                         {"r1": (None, False), "o": (None, False)})
+
+    def test_window_boundaries_are_upper_inclusive_lower_exclusive(self):
+        a1 = "2026-03-15T00:00:00Z"
+        idx = self.world(("at_boundary", a1), ("just_after", "2026-03-15T00:00:01Z"))
+        out = idx.link_requests([RequestRef("r1", self.person(), a1), RequestRef("r2", self.person(), "2026-09-15T00:00:00Z")])
+        self.assertEqual(set(out["r1"]), {"at_boundary"})
+        self.assertEqual(set(out["r2"]), {"just_after"})
+
+    def test_last_request_absorbs_evidence_after_its_audit_but_not_earlier_ones(self):
+        idx = self.world(("after_all", "2026-12-01T00:00:00Z"), ("between", "2026-06-01T00:00:00Z"))
+        out = idx.link_requests([RequestRef("r1", self.person(), "2026-03-15T00:00:00Z"),
+                                 RequestRef("r2", self.person(), "2026-09-15T00:00:00Z")])
+        self.assertEqual(set(out["r1"]), set())
+        self.assertEqual(set(out["r2"]), {"after_all", "between"})
+
+    def test_resource_is_owned_by_the_window_of_its_first_evidence(self):
+        # First seen in window 1, observed again in window 2: stays with request 1 only.
+        idx = EvidenceIndex([ob("export_x", "s", None, "FOUND", "2026-03-10T00:00:00Z", "e1", ["a@x.com"]),
+                             ob("export_x", "s", None, "FOUND", "2026-08-10T00:00:00Z", "e2", ["a@x.com"])], [])
+        out = idx.link_requests([RequestRef("r1", self.person(), "2026-03-15T00:00:00Z"),
+                                 RequestRef("r2", self.person(), "2026-09-15T00:00:00Z")])
+        self.assertEqual((set(out["r1"]), set(out["r2"])), ({"export_x"}, set()))
+
+    def test_equal_audit_times_share_one_window(self):
+        idx = self.world(("export_x", "2026-03-10T00:00:00Z"))
+        refs = [RequestRef("r1", self.person(), "2026-03-15T00:00:00Z", "2026-03-01T00:00:00Z"),
+                RequestRef("r2", self.person(), "2026-03-15T00:00:00Z", "2026-03-02T00:00:00Z")]
+        self.assertEqual(request_windows(refs), {"r1": (None, False), "r2": (None, False)})
+        out = idx.link_requests(refs)
+        self.assertEqual((set(out["r1"]), set(out["r2"])), ({"export_x"}, {"export_x"}))
+
+    def test_single_request_and_unresolved_identity_are_unaffected(self):
+        idx = self.world(("export_x", "2026-12-01T00:00:00Z"))
+        out = idx.link_requests([RequestRef("only", self.person(), "2026-03-15T00:00:00Z"),
+                                 RequestRef("nobody", None, "2026-03-15T00:00:00Z")])
+        self.assertEqual(set(out["only"]), {"export_x"})     # evidence after audit still identifies the record
+        self.assertEqual(out["nobody"], {})
+
+    def test_catalog_links_count_as_linking_events(self):
+        from models import ResourceLink
+        link = ResourceLink("tombstone_1", "identity_service", {"user_1"}, "2026-03-10T07:00:00Z", "activity_1")
+        idx = EvidenceIndex([], [], [link], [])
+        out = idx.link_requests([RequestRef("r1", self.person(), "2026-03-15T00:00:00Z"),
+                                 RequestRef("r2", self.person(), "2026-09-15T00:00:00Z")])
+        self.assertEqual((set(out["r1"]), set(out["r2"])), ({"tombstone_1"}, set()))
 
 
 if __name__ == "__main__":

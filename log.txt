@@ -317,3 +317,24 @@ repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
 
+## [2026-10-25T02:07:15Z] Person A: per-person request windows; VLM tooling (real run blocked: no API key)
+
+User Prompt (verbatim, secrets redacted):
+Continue as Person A. After the multimodal merge: status 32/32, exact 23/32, P .959, R .964, F1 .961, no COMPLETE-with-[] rows. Two new false positives appeared. ## 1. Prior-request episode rule (general, not case-specific) [...] group requests by resolved user_id (NOT by email) [...] Report how many user_ids have more than one request [...] Add a synthetic unit test [...] ## 2. Real VLM run for the screenshots [...] With ANTHROPIC_API_KEY in .env, run multimodal with MULTIMODAL_ALLOW_MANUAL=0 [...] tools/compare_multimodal.py [...] Commit and push person-a after each task. (full prompt in the session trace; abbreviated here for length)
+
+Agent Response Summary:
+Task 1: fetched and merged origin/main (PR #3). Implemented state.RequestRef / group_by_person / request_windows / EvidenceIndex.link_requests: requests are grouped by resolved user_id across samples + evaluation; windows W_1=(-inf,a_1], W_k=(a_(k-1),a_k], last open-ended (upper bounds inclusive); a resource belongs to the request whose window holds its FIRST linking evidence (documented in NOTES.md). 550 requests, 547 user_ids, 3 with two requests (user_07, user_17, user_18); no ties, no mixed emails. Person B pipeline before/after (scratch copy): status 32/32, exact 23->25/32, P .959->.979, R .964, F1 .961->.971, field acc .934->.966; case_07 and case_17 now exact; of 518 rows only 4 change (case_33/46/52/61). 8 new unit tests (53 total). tools/patches/person_b_integration.patch rebuilt around a single link_requests call (Person B files untouched). Task 2: no .env, no ANTHROPIC_API_KEY and no anthropic package existed; installed the SDK and could not run the real VLM pass, so no VLM results or comparison numbers exist and none are claimed. Built everything else: .env loading (whitelisted names, values never printed), lookup order API cache > frozen committed VLM results (code/multimodal_vlm) > manual fallback, API failures never raise (the main.py hook would otherwise drop all multimodal evidence), plain messages.create path, real-usage totals, tools/compare_multimodal.py (--run/--freeze/--pipeline-diff). The request path was verified through the real SDK against a local stub server (not the live API). Measured: forbidding the manual transcriptions without VLM results changes 12 of 518 rows and flips 8 statuses INCOMPLETE->COMPLETE, so MULTIMODAL_ALLOW_MANUAL stays fallback-on until VLM results are frozen; the final-run command uses 0. 62 unit tests pass.
+
+Actions:
+* git fetch/merge origin/main; edited code/state.py, code/multimodal.py, code/tests/test_state_rules.py, code/tests/test_multimodal.py, code/parsers/NOTES.md, tools/sample_harness.py, tools/patches/person_b_integration.patch; created tools/compare_multimodal.py, .env.example, code/multimodal_vlm/.gitkeep
+* pip install anthropic (2.3.0); ran unit tests, harness, custom cases, code/main.py, code/evaluation/main.py (scratch copy), compare_multimodal --pipeline-diff
+* Pushed person-a after each task (GitHub token supplied by the user earlier, used in memory only, [REDACTED])
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
