@@ -152,34 +152,77 @@ its `expected_output.csv`. The format is described in that folder's README.
   * `legal_retention_register_20260529.pdf` lists order refs and user_ids but no
     resource ids, so it emits **nothing**. This is consistent with the gold
     answers for cases 08, 12, 17 and 21, none of which has a legal-hold step.
-* **PNGs:** one vision call per file through the `anthropic` SDK.
-  * Model: `MULTIMODAL_MODEL`, default `claude-opus-5-5`, called with the
-    server-side refusal fallback, effort low and a JSON-schema output format.
-  * The key is read from `ANTHROPIC_API_KEY` only.
-  * Each result is validated: state and category must be in the allowed
-    vocabularies, and every record must name a resource id or an alias.
-  * Results are cached in `code/.cache/multimodal/<sha256(file bytes + model +
-    prompt version)>.json` (gitignored), so re-runs make zero calls.
-* **Usage:** every run writes `code/.cache/multimodal_usage.json`. It holds the
-  real API calls of that run (served model, input and output tokens, stop
-  reason) and how each file was satisfied. `usage_report.md` should read it.
-* **Hook:** `main.py`'s `_load_multimodal` calls
-  `multimodal_observations(skipped, dataset_dir)`. Given a directory, the
-  function builds the catalog alias map from that dataset's activity file.
-* **No API key in this environment.** The 11 PNGs are therefore covered by
-  committed transcriptions in `code/multimodal_manual/`, marked
-  `"method": "manual_transcription"`. This Claude Code
-  session (claude-opus-5-5) viewed each screenshot with its image reader and
-  transcribed it into the same record schema. These were **not API calls**, so
-  token usage is recorded as `null`, not estimated. To replace them, run with
-  `ANTHROPIC_API_KEY` set and `MULTIMODAL_ALLOW_MANUAL=0`.
-* **For the usage report:** the final run makes 0 API calls if every file is
-  cached. Say that the screenshots were transcribed manually in the dev
-  session, with no measurable token usage.
-* **Faithful-extraction choices that could cost precision:**
-  `security_audit_explorer` shows six audit records for user_03
-  (audit_record_001–006), and all six are emitted. All of them are within
-  retention, so case_45 verifies all six.
+* **PNGs:** one vision call per file with the `anthropic` SDK
+  (`client.messages.create`, strict JSON-schema output, `effort: low` on models
+  that support it, no beta features). The prompt is `VISION_PROMPT` in
+  `multimodal.py`. The model comes from `MULTIMODAL_MODEL` (default
+  `claude-opus-5-5`). Each result is validated: state and category must be in
+  `models.STATES` / `CATEGORIES`, and every record must name a resource id or a
+  catalog alias, otherwise it is dropped with a warning.
+* **Lookup order per file**, so re-runs make zero calls:
+
+  | # | Source | Notes |
+  |---|---|---|
+  | 1 | `code/.cache/multimodal/<sha256(bytes+model+prompt)>.json` | API results; gitignored |
+  | 2 | `code/multimodal_vlm/` | **frozen copies of API results, committed**, so `code.zip` reproduces the run without a key (`--freeze`) |
+  | 3 | `code/multimodal_manual/` | hand transcriptions made without the API; fallback only, with a warning; **ignored when `MULTIMODAL_ALLOW_MANUAL=0`** |
+  | 4 | API call | only if `ANTHROPIC_API_KEY` is set; the result goes to (1) |
+
+* **Key and settings** come from the environment or a `.env` file (repo root or
+  `code/`; see `.env.example`). Only `ANTHROPIC_API_KEY`, `MULTIMODAL_MODEL` and
+  `MULTIMODAL_ALLOW_MANUAL` are read from it, existing variables win, and values
+  are never printed. Without a key and a cached result, the file is skipped with
+  a warning.
+* **A failed API call never raises.** `main.py`'s hook turns any exception into
+  "no multimodal evidence at all", so errors, refusals and malformed JSON are
+  warnings and the file is skipped (a refusal or malformed response still counts
+  its tokens in the usage file).
+* **Usage:** `code/.cache/multimodal_usage.json` holds `api_calls_this_run` (served
+  model, input/output tokens, stop reason per call), `api_calls_count`, the token
+  sums, and `files_used` (how each file was satisfied). `cached_usage_total` sums
+  the real usage recorded when each cached API result was produced, so a re-run
+  with 0 calls still reports the one-time extraction cost. Nothing is estimated;
+  manual transcriptions and PDF text have no usage.
+
+### Real VLM run of the screenshots: status and procedure
+
+**Status: NOT YET RUN.** The session that built this had no `ANTHROPIC_API_KEY`,
+no `.env`, and could not be given one, so there is no VLM result and no
+comparison table yet. **No numbers are claimed here.** The comparison section of
+`evaluation_report.md` must wait for the run below.
+
+What *was* verified: the request path through the real SDK (anthropic 2.3.0)
+against a **local stub server** (`VisionCallViaStubServer` in
+`code/tests/test_multimodal.py`): request path, image block, JSON schema,
+`output_config`, auth header, response parsing, cache write, real-usage
+recording, zero calls on re-run, and error/refusal handling. A stub proves what
+we send and how we parse; it does **not** prove that the live API accepts the
+request. The first real call is the first such proof.
+
+**To run it** (needs `pip install anthropic` and a key in `.env` or the environment):
+
+```bash
+python3 tools/compare_multimodal.py --run --freeze --out code/evaluation/multimodal_comparison.md
+MULTIMODAL_ALLOW_MANUAL=0 python3 code/main.py          # final run: VLM results only
+python3 tools/compare_multimodal.py --pipeline-diff     # did any of the 518 rows change vs manual?
+```
+
+`--run` makes at most one call per PNG (11) with manual transcriptions
+forbidden; `--freeze` copies the API results into `code/multimodal_vlm/` (commit
+them); the report lists per file the records matched / missing / extra and the
+field mismatches (`observed_at` differences are shown but do not change
+pipeline output).
+
+**Why `MULTIMODAL_ALLOW_MANUAL` still defaults to fallback-on.** Measured on the
+518 rows (`--pipeline-diff` with no VLM result available): forbidding the manual
+transcriptions changes **12 rows (2.3%)**, and **8 of them flip from INCOMPLETE to
+a wrong COMPLETE** (cases 35, 39, 50, 52, 53, 55, 61 and 63; case_45/46/33/34
+lose steps). A default of 0 before the VLM results are frozen would silently
+degrade the shipped output and make a clean `code.zip` run differ from
+`output.csv`. Once `code/multimodal_vlm/` is committed, lookup order guarantees
+the VLM result is used whenever it exists, and the final run uses
+`MULTIMODAL_ALLOW_MANUAL=0` to make that strict. Flipping the default to 0 is then
+a one-line change in `_cached_entry`.
 
 ### Pending change in Person B's files: `tools/patches/person_b_integration.patch`
 

@@ -8,16 +8,25 @@ PDFs
 PNG screenshots
   No OCR engine is installed, so screenshots are transcribed by a vision LLM:
   one call per file, strict JSON-schema output, validated against models.STATES
-  and models.CATEGORIES before use. Results are cached in code/.cache/multimodal/
-  keyed by sha256(file bytes + model + prompt version), so re-runs make zero
-  calls.
+  and models.CATEGORIES before use. Each file is looked up in this order:
 
-  The API key is read from ANTHROPIC_API_KEY only; the model from
-  MULTIMODAL_MODEL (default claude-opus-5-5). Without a key, a file with no
-  cached result is skipped with a warning; nothing is invented.
-  code/multimodal_manual/ holds committed transcriptions of the screenshots made
-  without the API (method "manual_transcription", usage null). They are used
-  only when no API result exists; MULTIMODAL_ALLOW_MANUAL=0 ignores them.
+    1. code/.cache/multimodal/   API results (gitignored), keyed by
+                                 sha256(file bytes + model + prompt version)
+    2. code/multimodal_vlm/      frozen copies of API results, committed so that
+                                 code.zip reproduces the run without a key
+                                 (tools/compare_multimodal.py --freeze)
+    3. code/multimodal_manual/   transcriptions made WITHOUT the API (method
+                                 "manual_transcription", usage null); used only
+                                 as a fallback, with a warning, and not at all
+                                 when MULTIMODAL_ALLOW_MANUAL=0 (the final run)
+    4. API call                  if ANTHROPIC_API_KEY is set; the result is cached
+
+  Re-runs make zero calls. The key and model come from the environment or from a
+  .env file (ANTHROPIC_API_KEY, MULTIMODAL_MODEL, MULTIMODAL_ALLOW_MANUAL only;
+  values are never printed). Without a key and without a cached result, the file
+  is skipped with a warning; nothing is invented. A failed API call is a warning
+  too: it never raises, because main.py's hook would turn an exception into
+  "no multimodal evidence at all".
 
 Every record must name its resource explicitly: either a resource id visible
 in the evidence, or a business key (statement number, file name, customer
@@ -25,7 +34,9 @@ key) that the data catalog maps to a resource id (parsers.activity.
 resource_aliases). Rows without either are dropped, never guessed.
 
 Real per-call API usage (model, input/output tokens) for the run is written to
-code/.cache/multimodal_usage.json; it is never estimated.
+code/.cache/multimodal_usage.json; it is never estimated. For files served from a
+cache, the usage of the call that produced the cached result is reported under
+"cached_usage_total" (real numbers recorded at the time of that call).
 """
 from __future__ import annotations
 
@@ -48,7 +59,9 @@ from parsers.manifest import EvidenceFile
 
 CODE_DIR = Path(__file__).resolve().parent
 CACHE_DIR = CODE_DIR / ".cache" / "multimodal"          # API results (gitignored)
+FROZEN_DIR = CODE_DIR / "multimodal_vlm"                # committed copies of API results
 MANUAL_DIR = CODE_DIR / "multimodal_manual"             # committed manual transcriptions
+ENV_KEYS = ("ANTHROPIC_API_KEY", "MULTIMODAL_MODEL", "MULTIMODAL_ALLOW_MANUAL")
 USAGE_PATH = CODE_DIR / ".cache" / "multimodal_usage.json"
 PROMPT_VERSION = "v1"
 DEFAULT_MODEL = "claude-opus-5-5"
@@ -107,11 +120,13 @@ def multimodal_observations(files: list[EvidenceFile],
                             cache_dir: Path = CACHE_DIR,
                             log=sys.stderr,
                             manual_dir: Path = MANUAL_DIR,
-                            usage_path: Path | None = None) -> list[Observation]:
+                            usage_path: Path | None = None,
+                            frozen_dir: Path = FROZEN_DIR) -> list[Observation]:
     """Observations for the image/PDF evidence files skipped by load_evidence.
 
     aliases: the catalog alias map (parsers.activity.resource_aliases), or the
     dataset directory, from which it is built (the main.py hook passes that)."""
+    load_dotenv()
     if isinstance(aliases, (str, Path)):
         from parsers.activity import parse_activity, resource_aliases
         aliases = resource_aliases(parse_activity(Path(aliases))[0])
@@ -132,7 +147,7 @@ def multimodal_observations(files: list[EvidenceFile],
         if ev.kind not in ("png", "jpg", "jpeg", "pdf"):
             skipped.append({"file_id": ev.file_id, "reason": f"unsupported type {ev.kind}"})
             continue
-        entry = _cached_entry(ev, cache_dir, manual_dir)
+        entry = _cached_entry(ev, cache_dir, manual_dir, frozen_dir)
         if entry is None:
             entry = _call_vision(ev, cache_dir, usage_calls, log)
         if entry is None:
@@ -140,7 +155,11 @@ def multimodal_observations(files: list[EvidenceFile],
             print(f"multimodal: WARNING {ev.file_id} ({ev.rel_path}) not processed: "
                   "no cached result and ANTHROPIC_API_KEY is not set", file=log)
             continue
-        cached.append({"file_id": ev.file_id, "method": entry["extractor"]["method"],
+        method = entry["extractor"]["method"]
+        if method == "manual_transcription":
+            print(f"multimodal: WARNING {ev.file_id} ({ev.rel_path}): using the manual "
+                  "transcription (no VLM result available)", file=log)
+        cached.append({"file_id": ev.file_id, "method": method,
                        "model": entry["extractor"].get("model"),
                        "usage": entry.get("usage")})
         out += records_to_observations(ev, entry["records"], aliases, log)
@@ -221,12 +240,14 @@ def _model() -> str:
     return os.environ.get("MULTIMODAL_MODEL", DEFAULT_MODEL)
 
 
-def _cached_entry(ev: EvidenceFile, cache_dir: Path, manual_dir: Path) -> dict | None:
-    """API result for the current model + prompt version; else (if allowed) a
-    committed manual transcription of the same file bytes."""
-    p = cache_dir / f"{_cache_key(ev.path, _model())}.json"
-    if p.exists():
-        return json.loads(p.read_text(encoding="utf-8"))
+def _cached_entry(ev: EvidenceFile, cache_dir: Path, manual_dir: Path,
+                  frozen_dir: Path | None = FROZEN_DIR) -> dict | None:
+    """Cached result for a file: API cache, then frozen API results, then (if
+    allowed) a manual transcription of the same file bytes."""
+    name = f"{_cache_key(ev.path, _model())}.json"
+    for d in (cache_dir, frozen_dir):
+        if d is not None and (d / name).exists():
+            return json.loads((d / name).read_text(encoding="utf-8"))
     if os.environ.get("MULTIMODAL_ALLOW_MANUAL", "1") == "0" or not manual_dir.exists():
         return None
     sha = _sha256(ev.path)
@@ -238,38 +259,56 @@ def _cached_entry(ev: EvidenceFile, cache_dir: Path, manual_dir: Path) -> dict |
     return None
 
 
+EFFORT_FAMILIES = ("claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-5")
+
+
 def _call_vision(ev: EvidenceFile, cache_dir: Path, usage_calls: list, log) -> dict | None:
+    """One vision call for one file. Returns the cache entry, or None (with a
+    warning) on any failure: this function never raises."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return None
-    import anthropic   # only needed when a file is not cached
-
-    client = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY
+    try:
+        import anthropic   # only needed when a file has no cached result
+    except ImportError:
+        print(f"multimodal: WARNING {ev.file_id}: the 'anthropic' package is not installed "
+              "(pip install anthropic)", file=log)
+        return None
     media = "application/pdf" if ev.kind == "pdf" else f"image/{'jpeg' if ev.kind == 'jpg' else ev.kind}"
     block_type = "document" if ev.kind == "pdf" else "image"
     data = base64.standard_b64encode(ev.path.read_bytes()).decode("utf-8")
     model = _model()
-    kwargs = dict(
-        model=model, max_tokens=16000,
-        output_config={"effort": "low", "format": {"type": "json_schema", "schema": RECORD_SCHEMA}},
-        messages=[{"role": "user", "content": [
-            {"type": block_type, "source": {"type": "base64", "media_type": media, "data": data}},
-            {"type": "text", "text": VISION_PROMPT}]}],
-    )
-    if model in ("claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"):
-        resp = client.beta.messages.create(betas=["server-side-fallback-2026-07-01"],
-                                           fallbacks="default", **kwargs)
-    else:
-        resp = client.messages.create(**kwargs)
+    output_config: dict = {"format": {"type": "json_schema", "schema": RECORD_SCHEMA}}
+    if model.startswith(EFFORT_FAMILIES):
+        output_config["effort"] = "low"          # transcription needs no deep reasoning
+    try:
+        client = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL
+        resp = client.messages.create(
+            model=model, max_tokens=16000, output_config=output_config,
+            messages=[{"role": "user", "content": [
+                {"type": block_type, "source": {"type": "base64", "media_type": media, "data": data}},
+                {"type": "text", "text": VISION_PROMPT}]}])
+    except anthropic.APIError as e:
+        # The message can echo request details; the key is never part of it.
+        print(f"multimodal: WARNING {ev.file_id}: API call failed ({type(e).__name__}: "
+              f"{str(e)[:200]})", file=log)
+        return None
     call = {"file_id": ev.file_id, "requested_model": model, "served_model": resp.model,
             "input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens,
             "stop_reason": resp.stop_reason,
             "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    usage_calls.append(call)
+    usage_calls.append(call)               # tokens were spent whatever the outcome
     if resp.stop_reason != "end_turn":
         print(f"multimodal: WARNING {ev.file_id}: stop_reason={resp.stop_reason}; not cached", file=log)
         return None
-    text = next(b.text for b in resp.content if b.type == "text")
-    records = json.loads(text)["records"]
+    try:
+        text = next(b.text for b in resp.content if b.type == "text")
+        records = json.loads(text)["records"]
+        if not isinstance(records, list):
+            raise ValueError("records is not a list")
+    except (StopIteration, KeyError, ValueError) as e:     # JSONDecodeError is a ValueError
+        print(f"multimodal: WARNING {ev.file_id}: response is not the expected JSON "
+              f"({type(e).__name__}); not cached", file=log)
+        return None
     entry = {"file_id": ev.file_id, "file_path": ev.rel_path, "file_sha256": _sha256(ev.path),
              "extractor": {"method": "api", "model": model, "served_model": resp.model,
                            "prompt_version": PROMPT_VERSION},
@@ -278,6 +317,31 @@ def _call_vision(ev: EvidenceFile, cache_dir: Path, usage_calls: list, log) -> d
     path = cache_dir / f"{_cache_key(ev.path, model)}.json"
     path.write_text(json.dumps(entry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return entry
+
+
+def load_dotenv(paths: list[Path] | None = None) -> list[str]:
+    """Load the whitelisted variables (ENV_KEYS) from a .env file into os.environ
+    without overriding variables that are already set. Looks in the repo root and
+    in code/. Returns the NAMES it set; values are never logged."""
+    paths = paths if paths is not None else [CODE_DIR.parent / ".env", CODE_DIR / ".env"]
+    loaded = []
+    for p in paths:
+        if not p.is_file():
+            continue
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].lstrip()
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip()
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                v = v[1:-1]
+            if k in ENV_KEYS and v and not os.environ.get(k):
+                os.environ[k] = v
+                loaded.append(k)
+    return loaded
 
 
 # ------------------------------------------------------------------ validation
@@ -332,7 +396,14 @@ def _resolve(keys: list[str], aliases: dict[str, tuple[str, str]]) -> tuple[str 
 
 
 def _write_usage(path: Path, calls: list, used: list, skipped: list) -> None:
+    real = [u["usage"] for u in used if u.get("usage") and u.get("method") == "api"]
     report = {
+        "cached_usage_total": {
+            "files": len(real),
+            "input_tokens": sum(u["input_tokens"] for u in real),
+            "output_tokens": sum(u["output_tokens"] for u in real),
+            "note": "real usage recorded when each cached API result was produced; "
+                    "files without an API result (PDF text, manual transcription) are not counted"},
         "run_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "api_calls_this_run": calls,
         "api_calls_count": len(calls),
