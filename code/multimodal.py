@@ -51,6 +51,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,10 +68,14 @@ CACHE_DIR = CODE_DIR / ".cache" / "multimodal"          # results of live calls 
 FROZEN_DIR = CODE_DIR / "multimodal_vlm"                # accepted results (committed)
 MANUAL_DIR = CODE_DIR / "multimodal_manual"             # manual transcriptions (committed fallback)
 USAGE_PATH = CODE_DIR / ".cache" / "multimodal_usage.json"
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v4"
 # Default of MULTIMODAL_ALLOW_MANUAL ("1" = fallback allowed, "0" = never). Change this
 # to "0" once the accepted vision results are frozen in code/multimodal_vlm/ (see NOTES.md).
 MANUAL_FALLBACK_DEFAULT = "1"
+KNOWN_SYSTEMS = frozenset(SYSTEM_FOR_CATEGORY.values()) | {"marketing_platform", "object_storage"}
+CALL_PAUSE_SECONDS = float(os.environ.get("MULTIMODAL_CALL_PAUSE", "13"))   # between live calls
+RATE_LIMIT_BACKOFF = (30.0, 60.0, 120.0)        # extra waits after the provider's own retries gave up
+_sleep = time.sleep                              # replaced in tests
 MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "pdf": "application/pdf"}
 
 RECORD_SCHEMA = {
@@ -108,14 +113,25 @@ For each record return:
 - resource_id: the record's resource id if one is shown (e.g. export_1260), else ""
 - keys: every other reference shown for that record (file name, statement number,
   ticket number, customer key), exactly as displayed
-- system_id: the owning system (e.g. account_service, search_service, analytics_platform,
-  support_platform, export_service, integration_service, backup_service, security_service,
-  identity_service, marketing_platform, object_storage)
-- category: one of {sorted(CATEGORIES)}
-- state: FOUND (record exists), NOT_FOUND, IDENTIFIABLE (record shows a direct identifier:
-  name, email, phone, email hash), ANONYMIZED, REDACTED (kept but direct identifiers removed),
-  ACTIVE (data flow running / backup restorable), DISABLED (data flow off), BLOCKED (restore blocked)
-- identifiers: every email, phone number, user_id and email hash shown for that record
+- system_id: the id of the internal service that owns the record, one of: account_service,
+  search_service, analytics_platform, support_platform, export_service, integration_service,
+  backup_service, security_service, identity_service, legal_service, marketing_platform,
+  object_storage. Never a product, brand or application name shown on the screen; if unsure, ""
+- category: one of {sorted(CATEGORIES)}. The prefix of a resource id names its category
+  (account_ -> USER_PROFILE, search_ -> SEARCH_INDEX_ENTRY, backup_ -> BACKUP_ARCHIVE,
+  tombstone_ -> ACCOUNT_TOMBSTONE, audit_record_ -> SECURITY_AUDIT_LOG, ...); follow it
+- state, by what the screen shows for that record:
+  * any record: FOUND = the record is listed and no direct identifier of a person is displayed
+    for it; NOT_FOUND = the screen says it does not exist
+  * IDENTIFIABLE = the record row itself displays a direct identifier (name, email, phone, email
+    hash). A record that only links to a user reference (a user id) is FOUND, not IDENTIFIABLE
+  * ANONYMIZED / REDACTED = kept, with the identifying fields shown as removed / masked
+  * data flows: ACTIVE = running or enabled, DISABLED = off or paused
+  * backups: ACTIVE = restorable (restore not blocked); BLOCKED = the screen shows restore blocked.
+    A backup is never IDENTIFIABLE or FOUND
+- identifiers: every email, phone number, user_id and email hash displayed in that record's own
+  row or detail panel. Do not copy an identifier shown elsewhere on the screen (another record,
+  a header, a customer panel) onto a record that does not display it
 - observed_at: ISO-8601 UTC time the screen says the data was captured or refreshed, or "" if none
 - notes: one short factual sentence (at most 15 words)
 Transcribe only what is visible. Do not infer records that are not shown."""
@@ -184,6 +200,7 @@ def multimodal_observations(files: list[EvidenceFile],
     used: list[dict] = []         # how each file was satisfied
     skipped: list[dict] = []
     out: list[Observation] = []
+    n_live, rate_limited = 0, False
     for ev in sorted(files, key=lambda e: e.file_id):
         if ev.kind == "pdf":
             text = pdf_text(ev.path)
@@ -195,8 +212,22 @@ def multimodal_observations(files: list[EvidenceFile],
             skipped.append({"file_id": ev.file_id, "reason": f"unsupported type {ev.kind}"})
             continue
         entry, from_cache = _cached_vlm_entry(ev, backend, cache_dir, frozen_dir), True
-        if entry is None and backend is not None:
+        if entry is None and backend is not None and not rate_limited:
+            if n_live:
+                _sleep(CALL_PAUSE_SECONDS)
+            n_live += 1
             entry, from_cache = _call_vision(ev, backend, cache_dir, fresh, log), False
+            for wait in RATE_LIMIT_BACKOFF:
+                if entry is not None or not fresh or fresh[-1].get("error_kind") != "rate_limit":
+                    break
+                print(f"multimodal: {ev.file_id}: rate limited ({_quota_kind(_LAST_ERROR[0])}); "
+                      f"waiting {wait:.0f}s before retrying", file=log)
+                _sleep(wait)
+                entry = _call_vision(ev, backend, cache_dir, fresh, log)
+            if entry is None and fresh and fresh[-1].get("error_kind") == "rate_limit":
+                rate_limited = True      # a quota error persisted: do not spend more calls on it
+                print(f"multimodal: STOP: rate limit persisted for {ev.file_id} ({_quota_kind(_LAST_ERROR[0])}); "
+                      "no further live calls in this run", file=log)
         if entry is None and allow_manual:
             entry = _manual_entry(ev, manual_dir)
             if entry is not None:
@@ -379,6 +410,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_LAST_ERROR = [""]
+
+
+def _quota_kind(message: str) -> str:
+    """Per-minute vs per-day, only when the provider's message says so."""
+    m = (message or "").lower().replace(" ", "")
+    if "perday" in m or "daily" in m:
+        return "per-day quota"
+    if "perminute" in m:
+        return "per-minute quota"
+    return "quota window not stated in the message"
+
+
 def _call_vision(ev: EvidenceFile, backend: VisionBackend, cache_dir: Path, fresh: list, log) -> dict | None:
     """One vision call for one file. Returns the cache entry, or None (with a
     warning) on any failure: this function never raises. Every attempt is
@@ -393,7 +437,8 @@ def _call_vision(ev: EvidenceFile, backend: VisionBackend, cache_dir: Path, fres
         kind = getattr(e, "kind", type(e).__name__)
         fresh += _response_records(ev.file_id, getattr(e, "usage", None), False, False, _now(),
                                    backend.provider, backend.model, kind)
-        print(f"multimodal: WARNING {ev.file_id}: vision call failed [{kind}]: {str(e)[:200]}", file=log)
+        _LAST_ERROR[0] = str(e)
+        print(f"multimodal: WARNING {ev.file_id}: vision call failed [{kind}]: {str(e)[:600]}", file=log)
         return None
     at = _now()
     fresh += _response_records(ev.file_id, usage, True, False, at, backend.provider, backend.model)
@@ -436,6 +481,10 @@ def records_to_observations(ev: EvidenceFile, records: list[dict],
         if problem:
             print(f"multimodal: {ev.file_id} record {i} dropped: {problem}", file=log)
             continue
+        by_id = category_for_resource(rid)
+        if by_id and cat != by_id:                 # the id prefix names the category; the id wins
+            print(f"multimodal: {ev.file_id} {rid}: category {cat} -> {by_id} (from id prefix)", file=log)
+            cat = by_id
         ids = {n for n in (normalize_identifier(x) for x in r.get("identifiers") or []) if n}
         observed = ev.captured_at
         t = r.get("observed_at") or ""
@@ -444,7 +493,10 @@ def records_to_observations(ev: EvidenceFile, records: list[dict],
                 observed = t
         except ValueError:
             pass
-        system = system or r.get("system_id") or SYSTEM_FOR_CATEGORY.get(cat or "", "")
+        said = (r.get("system_id") or "").strip()
+        if said not in KNOWN_SYSTEMS:              # a product/brand name is not a system id
+            said = ""
+        system = system or said or SYSTEM_FOR_CATEGORY.get(cat or "", "")
         out.append(Observation(
             resource_id=rid, system_id=system, category=cat, state=state, identifiers=ids,
             observed_at=observed, evidence_id=ev.file_id, source_kind="image",
@@ -465,6 +517,17 @@ def _resolve(keys: list[str], aliases: dict[str, tuple[str, str]]) -> tuple[str 
     return None, None
 
 
+PRIOR_RUNS_PATH = CODE_DIR / "multimodal_usage_prior_runs.json"   # superseded runs, committed
+
+
+def _prior_run_calls() -> list:
+    """Real calls of earlier runs whose results were superseded (still spent, still reported)."""
+    try:
+        return list(json.loads(PRIOR_RUNS_PATH.read_text(encoding="utf-8")).get("calls", []))
+    except (OSError, ValueError):
+        return []
+
+
 def _write_usage(path: Path, fresh: list, used: list, skipped: list) -> None:
     """Write the usage ledger (schema read by evaluation/usage_report.py).
 
@@ -482,6 +545,7 @@ def _write_usage(path: Path, fresh: list, used: list, skipped: list) -> None:
             calls += recs          # includes a failed first attempt, which was billed too
         else:
             calls += [c for c in fresh if c["ok"] and c["file_id"] == u["file_id"]]
+    calls += _prior_run_calls()
     report = {
         "calls": calls,
         "api_calls_this_run": len(fresh),            # API responses, retries counted

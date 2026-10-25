@@ -28,7 +28,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "code"))
 
 import multimodal  # noqa: E402
-from models import CATEGORIES, STATES, normalize_identifier  # noqa: E402
+from models import CATEGORIES, STATES, category_for_resource, normalize_identifier  # noqa: E402
 from parsers import load_evidence  # noqa: E402
 from parsers.activity import parse_activity, resource_aliases  # noqa: E402
 
@@ -44,6 +44,8 @@ def _norm_record(r: dict, aliases: dict) -> tuple[str | None, dict | None, str |
         ([r["resource_id"]] if r.get("resource_id") else []) + list(r.get("keys") or []), aliases)
     state = str(r.get("state", "")).upper()
     cat = str(r.get("category", "")).upper() or None
+    if rid is not None and category_for_resource(rid):
+        cat = category_for_resource(rid) if cat in (None, *CATEGORIES) else cat   # as in the pipeline
     if rid is None:
         return None, None, f"no resource id or alias in {r.get('keys')}"
     if state not in STATES:
@@ -51,7 +53,7 @@ def _norm_record(r: dict, aliases: dict) -> tuple[str | None, dict | None, str |
     if cat is not None and cat not in CATEGORIES:
         return rid, None, f"invalid category {cat!r}"
     return rid, {
-        "system_id": system or r.get("system_id") or "",
+        "system_id": system or (r.get("system_id") if r.get("system_id") in multimodal.KNOWN_SYSTEMS else "") or "",
         "category": cat,
         "state": state,
         "identifiers": frozenset(n for n in (normalize_identifier(x) for x in r.get("identifiers") or []) if n),

@@ -627,3 +627,85 @@ branch=person-a
 repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
+
+## [2026-10-25T03:36:08Z] Real Gemini run on the screenshots: not possible, no key in this session
+
+User Prompt (verbatim, secrets redacted):
+Thanks. Person B's work on main is fine, he asked for it. Do NOT touch the person-b branch; he will git merge origin/main himself. Keep working on person-a and merge main into it. Next: the real Gemini run on the screenshots. - The Gemini key is in .env (GEMINI_API_KEY) / the environment on this machine. Never print, log or paste it [...] Run in order and report the output of each: 1. check_env.py --list 2. check_env.py --ping 3. The real multimodal run on the 11 screenshots with MULTIMODAL_ALLOW_MANUAL=0 [...] 4. tools/compare_multimodal.py [...] If any file has 0 records or a truncation that failed after the retry, STOP [...] Do NOT regenerate or commit output.csv yet [...] Commit and push person-a. (full prompt in the session trace; abbreviated here for length)
+
+Agent Response Summary:
+Fetched origin: person-a already contains main (nothing to merge); the person-b branch was not touched. The key is NOT available in this session: no .env exists anywhere on the machine (only .env.example templates), no GEMINI/GOOGLE/API_KEY variable is set, and llm_provider.describe() reports provider none. Ran steps 1 and 2 as requested; both stop at the key check (provider none, exit 1). Steps 3 and 4 were deliberately not run: with no provider the run would only skip all 11 files and overwrite the usage ledger with an empty run, and the comparison would report no vision results. No model calls were made, no results or conclusions were produced, output.csv was not touched. Told the user how to supply the key (cloud environment settings, new session) or run the commands on the machine that has the .env.
+
+Actions:
+* git fetch origin; searched the filesystem for .env files and the environment for key variable names (names only); python3 tools/check_env.py --list and --ping (both exit 1: no provider)
+* Pushed person-a (log entry only; GitHub token supplied earlier by the user, used in memory only, [REDACTED])
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
+## [2026-10-25T04:10:00Z] Real Gemini run on 11 screenshots: results, STOP for decision
+
+User Prompt (verbatim, secrets redacted):
+Run check_env --list, --ping, the real multimodal run on the 11 screenshots with MULTIMODAL_ALLOW_MANUAL=0 (one run only), compare VLM vs manual, STOP if any file has 0 records or failed truncation; do not regenerate output.csv. (Gemini key supplied in a follow-up message: [REDACTED])
+
+Agent Response Summary:
+Ran the single real run: 10 of 11 files processed (no truncation, no retries, no 0-record file); evidence_28 failed with 503 UNAVAILABLE x3 and has no result. Compared against manual transcriptions and the pipeline output (offline, no classifier calls): VLM-vs-manual differences change 3 rows (case_34, case_46, case_55) plus case_53 from the missing file. Stopped before NOTES.md, freezing, dry run and commit to ask the user for decisions.
+
+Actions:
+* python3 tools/compare_multimodal.py --run --out code/evaluation/multimodal_comparison.md
+* LLM_PROVIDER=none python3 tools/compare_multimodal.py --pipeline-diff
+* offline main.py runs (manual-only vs hybrid) in scratchpad; nothing committed, output.csv untouched
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
+## [2026-10-25T04:40:00Z] Prompt v3, run 2 stopped on 429 for 7 of 11 files
+
+User Prompt (verbatim, secrets redacted):
+Skip the evidence_28-only retry; fix the prompt (generic rules only) and re-run all 11 files. Keep run 1 usage in the ledger and its comparison as multimodal_comparison_run1.md; document the prompt change in NOTES.md; stop if any file returns 0 records or fails after retry; then review differences and run final_run.py --require-llm. Do not commit output.csv until that run. (Earlier message also contained a GitHub token: [REDACTED])
+
+Agent Response Summary:
+Rewrote the vision prompt (v3: per-category state guidance, no identifier copying), added id-prefix category normalization, preserved run 1 usage in code/multimodal_usage_prior_runs.json and its comparison file, and ran the second real run. 4 files succeeded; 7 failed with HTTP 429 after retries, so I stopped. The v3 wording for system_id caused the model to return a product name (Sentinel) and needs a fix and a v4 bump before re-running.
+
+Actions:
+* edited code/multimodal.py, tools/compare_multimodal.py, code/tests/test_multimodal.py
+* python3 tools/compare_multimodal.py --run (run 2, partial)
+* committed work in progress; output.csv untouched
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+
+## [2026-10-25T05:10:00Z] Prompt v4 run stopped: Gemini 429 quota exhausted on first call
+
+User Prompt (verbatim, secrets redacted):
+Approved: bump to prompt v4 (generic system_id wording) and re-run all 11 files in one consistent run, 12-15s pause between calls, back off on 429 and retry up to 3 times then stop and report the exact error; keep run 1 and run 2 usage in the ledger and the partial run-2 comparison as multimodal_comparison_run2_partial.md; stop if a file has 0 records or fails after retries; then review differences, document in NOTES.md and run tools/final_run.py --require-llm. Do not commit output.csv before that.
+
+Agent Response Summary:
+Bumped the prompt to v4, added a 13s pause between live calls, an outer 429 back-off (30/60/120s) that stops further calls once a quota error persists, and a rule that non-catalog system ids fall back to the category's system. Saved the partial run-2 comparison and added run 2's calls to the prior-runs ledger. The v4 run failed on its very first call (evidence_04) with 429 RESOURCE_EXHAUSTED after 4 rounds of retries, so no file has a v4 result and I stopped.
+
+Actions:
+* edited code/multimodal.py, tools/compare_multimodal.py, code/tests/test_multimodal.py (115 tests pass)
+* python3 tools/compare_multimodal.py --run (stopped on 429); output.csv untouched
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
