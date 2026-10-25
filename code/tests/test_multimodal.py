@@ -110,17 +110,24 @@ GOOD = {"records": [{
 class FakeProvider:
     """Records what it is called with; returns a canned result or raises."""
 
-    def __init__(self, provider="fakeprov", model="fake-model-1", payload=GOOD, fail=None, served=None):
+    def __init__(self, provider="fakeprov", model="fake-model-1", payload=GOOD, fail=None, served=None,
+                 attempts=None):
         self.provider, self.model, self.payload, self.fail = provider, model, payload, fail
         self.served = served or model
+        self.attempts = attempts          # provider-style per-response list (truncation retry)
         self.calls = []
 
     def call(self, system, prompt, image_bytes, mime, schema):
         self.calls.append({"system": system, "prompt": prompt, "bytes": image_bytes, "mime": mime, "schema": schema})
         if self.fail:
             raise self.fail
-        return self.payload, {"provider": self.provider, "model": self.served, "requested_model": self.model,
-                              "input_tokens": 1500, "output_tokens": 321, "usage_reported": True}
+        usage = {"provider": self.provider, "model": self.served, "requested_model": self.model,
+                 "input_tokens": 1500, "output_tokens": 321, "usage_reported": True}
+        if self.attempts:
+            usage["attempts"] = self.attempts
+            usage["input_tokens"] = sum(a["input_tokens"] for a in self.attempts)
+            usage["output_tokens"] = sum(a["output_tokens"] for a in self.attempts)
+        return self.payload, usage
 
     def backend(self):
         return multimodal.VisionBackend(self.provider, self.model, self.call)
@@ -205,6 +212,43 @@ class VisionViaBackend(unittest.TestCase):
         self.run_once(b.backend())
         self.assertEqual((len(a.calls), len(b.calls)), (1, 1))
         self.assertEqual(len(list(self.cache.glob("*.json"))), 2)
+
+    # ---- a truncation retry is two billed responses: two ledger records
+    @staticmethod
+    def _attempt(ok, tin, tout, limit, retry, failure=""):
+        return {"provider": "fakeprov", "model": "fake-model-1", "requested_model": "fake-model-1",
+                "input_tokens": tin, "output_tokens": tout, "usage_reported": True,
+                "ok": ok, "failure": failure, "max_output_tokens": limit, "retry": retry}
+
+    def test_truncation_retry_is_recorded_as_two_responses(self):
+        att = [self._attempt(False, 1000, 8192, 8192, False, "truncated"), self._attempt(True, 1000, 900, 16384, True)]
+        fp = FakeProvider(attempts=att)
+        out, _, usage = self.run_once(fp.backend())
+        self.assertEqual(len(out), 1)
+        self.assertEqual([(c["ok"], c["retry"], c["input_tokens"], c["output_tokens"], c["from_cache"]) for c in usage["calls"]],
+                         [(False, False, 1000, 8192, False), (True, True, 1000, 900, False)])
+        self.assertEqual(usage["calls"][0]["error_kind"], "truncated")
+        self.assertEqual((usage["api_calls_this_run"], usage["input_tokens_this_run"], usage["output_tokens_this_run"]),
+                         (2, 2000, 9092))
+        # re-run from the cache: zero new calls, the same two billed responses are still reported
+        out2, _, usage2 = self.run_once(fp.backend())
+        self.assertEqual(len(fp.calls), 1)
+        self.assertEqual(usage2["api_calls_this_run"], 0)
+        self.assertEqual([(c["ok"], c["retry"], c["from_cache"]) for c in usage2["calls"]],
+                         [(False, False, True), (True, True, True)])
+        self.assertEqual(sum(c["output_tokens"] for c in usage2["calls"]), 9092)
+
+    def test_failure_after_a_retry_records_both_responses(self):
+        att = [self._attempt(False, 1000, 8192, 8192, False, "truncated"),
+               self._attempt(False, 1000, 16384, 16384, True, "truncated")]
+        spent = {"provider": "fakeprov", "model": "fake-model-1", "input_tokens": 2000, "output_tokens": 24576,
+                 "usage_reported": True, "attempts": att}
+        out, log, usage = self.run_once(FakeProvider(fail=FakeFailure("truncated", "cut off twice", spent)).backend())
+        self.assertEqual(out, [])
+        self.assertEqual([(c["ok"], c["retry"], c["output_tokens"]) for c in usage["calls"]],
+                         [(False, False, 8192), (False, True, 16384)])
+        self.assertEqual(usage["api_calls_this_run"], 2)
+        self.assertFalse(self.cache.exists() and list(self.cache.glob("*.json")))
 
     # ---- failures never raise and are never cached
     def test_failure_with_usage_is_recorded_not_cached_and_does_not_raise(self):
@@ -331,6 +375,75 @@ class _ProviderLayer(unittest.TestCase):
             self.assertEqual((fresh[0]["ok"], fresh[0]["input_tokens"], fresh[0]["error_kind"]), (False, 5, "rate_limit"))
         finally:
             llm.reset_provider()
+
+
+try:
+    import llm_provider as _llm
+    from google.genai import types as _gt
+    _HAS_PROVIDER_AND_SDK = True
+except ImportError:
+    _HAS_PROVIDER_AND_SDK = False
+
+
+@unittest.skipUnless(_HAS_PROVIDER_AND_SDK, "needs Person B's llm_provider.py and the google-genai package")
+class RealGeminiProviderWithFakeClient(unittest.TestCase):
+    """Person B's real GeminiProvider (retry logic, usage accounting) behind a scripted client.
+    No network: responses are real google-genai types."""
+
+    @staticmethod
+    def resp(text, finish, pt, ct, tt):
+        um = _gt.GenerateContentResponseUsageMetadata(prompt_token_count=pt, candidates_token_count=ct,
+                                                      thoughts_token_count=tt, total_token_count=pt + ct + tt)
+        cand = _gt.Candidate(content=_gt.Content(role="model", parts=[_gt.Part(text=text)]), finish_reason=finish)
+        return _gt.GenerateContentResponse(candidates=[cand], usage_metadata=um, model_version="gemini-test-001")
+
+    def run_with(self, script):
+        from types import SimpleNamespace as NS
+        calls = []
+
+        def generate_content(model, contents, config):
+            calls.append(config.max_output_tokens)
+            return script.pop(0)
+
+        _llm.set_provider(_llm.GeminiProvider("not-a-real-key", client=NS(models=NS(generate_content=generate_content))))
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            ev = next(e for e in load_evidence(DATASET)[2] if e.file_id == "evidence_28")
+            aliases = resource_aliases(parse_activity(DATASET)[0])
+            saved = os.environ.pop("MULTIMODAL_ALLOW_MANUAL", None)
+            os.environ["MULTIMODAL_ALLOW_MANUAL"] = "0"
+            try:
+                out = multimodal_observations([ev], aliases, cache_dir=tmp / "c", log=io.StringIO(),
+                                              manual_dir=tmp / "m", frozen_dir=tmp / "f", usage_path=tmp / "u.json")
+            finally:
+                os.environ.pop("MULTIMODAL_ALLOW_MANUAL", None)
+                if saved is not None:
+                    os.environ["MULTIMODAL_ALLOW_MANUAL"] = saved
+            return out, json.loads((tmp / "u.json").read_text()), calls
+        finally:
+            _llm.reset_provider()
+
+    def test_truncation_then_success_gives_two_billed_responses_and_one_result(self):
+        stop, cut = _gt.FinishReason.STOP, _gt.FinishReason.MAX_TOKENS
+        out, usage, limits = self.run_with([self.resp('{"records": [', cut, 1000, 100, 8000),
+                                            self.resp(json.dumps(GOOD), stop, 1000, 300, 200)])
+        self.assertEqual([o.resource_id for o in out], ["support_1034"])
+        self.assertEqual(limits, [_llm.MAX_OUTPUT_TOKENS["vision"], _llm.RETRY_MAX_OUTPUT_TOKENS["vision"]])
+        a, b = usage["calls"]
+        self.assertEqual((a["ok"], a["retry"], a["error_kind"], a["input_tokens"], a["output_tokens"]), (False, False, "truncated", 1000, 8100))
+        self.assertEqual((b["ok"], b["retry"], b["input_tokens"], b["output_tokens"]), (True, True, 1000, 500))
+        self.assertEqual((a["provider"], b["provider"]), ("gemini", "gemini"))
+        self.assertEqual((usage["api_calls_this_run"], usage["input_tokens_this_run"], usage["output_tokens_this_run"]), (2, 2000, 8600))
+        self.assertEqual(out[0].raw["method"], "vlm:gemini/gemini-test-001")
+
+    def test_truncated_twice_is_two_failed_responses_and_no_observation(self):
+        cut = _gt.FinishReason.MAX_TOKENS
+        out, usage, _ = self.run_with([self.resp(json.dumps(GOOD), cut, 1000, 100, 8000),     # valid-looking but cut off
+                                       self.resp(json.dumps(GOOD), cut, 1000, 100, 16000)])
+        self.assertEqual(out, [])
+        self.assertEqual([(c["ok"], c["retry"], c["error_kind"]) for c in usage["calls"]],
+                         [(False, False, "truncated"), (False, True, "truncated")])
+        self.assertEqual(usage["api_calls_this_run"], 2)
 
 
 def _compare_tool():

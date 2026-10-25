@@ -341,13 +341,38 @@ def _manual_entry(ev: EvidenceFile, manual_dir: Path) -> dict | None:
     return None
 
 
-def _fail_record(ev: EvidenceFile, backend: VisionBackend, e: Exception) -> dict:
-    u = getattr(e, "usage", None) or {}
-    return {"file_id": ev.file_id, "provider": u.get("provider", backend.provider),
-            "model": u.get("model", backend.model), "input_tokens": int(u.get("input_tokens", 0) or 0),
-            "output_tokens": int(u.get("output_tokens", 0) or 0), "ok": False,
-            "usage_reported": bool(u.get("usage_reported", False)), "from_cache": False,
-            "error_kind": getattr(e, "kind", type(e).__name__), "at": _now()}
+def _response_records(file_id: str, usage: dict | None, ok: bool, from_cache: bool, at,
+                      default_provider: str = None, default_model: str = None,
+                      error_kind: str | None = None) -> list[dict]:
+    """Ledger records for one provider call: ONE record per API response.
+
+    The provider reports ``usage["attempts"]`` (one entry per response, e.g. a
+    truncated answer and its retry, each billed). Without it (older results, a
+    failure that carried no response) the call is a single record. Tokens are as
+    reported; a call with no usage is recorded with 0 tokens, usage_reported false."""
+    usage = usage or {}
+    attempts = usage.get("attempts")
+    if not attempts:
+        rec = {"file_id": file_id, "provider": usage.get("provider", default_provider),
+               "model": usage.get("model") or default_model,
+               "input_tokens": int(usage.get("input_tokens", 0) or 0),
+               "output_tokens": int(usage.get("output_tokens", 0) or 0), "ok": ok,
+               "usage_reported": bool(usage.get("usage_reported", ok)), "from_cache": from_cache, "at": at}
+        if not ok:
+            rec["error_kind"] = error_kind
+        return [rec]
+    out = []
+    for a in attempts:
+        rec = {"file_id": file_id, "provider": a.get("provider") or default_provider,
+               "model": a.get("model") or default_model,
+               "input_tokens": int(a.get("input_tokens", 0) or 0), "output_tokens": int(a.get("output_tokens", 0) or 0),
+               "ok": bool(a.get("ok")), "usage_reported": bool(a.get("usage_reported", True)),
+               "retry": bool(a.get("retry", False)), "max_output_tokens": a.get("max_output_tokens"),
+               "from_cache": from_cache, "at": at}
+        if not rec["ok"]:
+            rec["error_kind"] = a.get("failure") or error_kind
+        out.append(rec)
+    return out
 
 
 def _now() -> str:
@@ -365,19 +390,18 @@ def _call_vision(ev: EvidenceFile, backend: VisionBackend, cache_dir: Path, fres
         if not isinstance(records, list):
             raise ValueError("'records' is not a list")
     except Exception as e:     # noqa: BLE001 - see docstring; main.py's hook swallows exceptions
-        fresh.append(_fail_record(ev, backend, e))
         kind = getattr(e, "kind", type(e).__name__)
+        fresh += _response_records(ev.file_id, getattr(e, "usage", None), False, False, _now(),
+                                   backend.provider, backend.model, kind)
         print(f"multimodal: WARNING {ev.file_id}: vision call failed [{kind}]: {str(e)[:200]}", file=log)
         return None
-    call = {"file_id": ev.file_id, "provider": usage.get("provider", backend.provider),
-            "model": usage.get("model") or backend.model,
-            "input_tokens": int(usage.get("input_tokens", 0)), "output_tokens": int(usage.get("output_tokens", 0)),
-            "ok": True, "usage_reported": bool(usage.get("usage_reported", True)), "at": _now()}
-    fresh.append({**call, "from_cache": False})
+    at = _now()
+    fresh += _response_records(ev.file_id, usage, True, False, at, backend.provider, backend.model)
+    served = usage.get("model") or backend.model
     entry = {"file_id": ev.file_id, "file_path": ev.rel_path, "file_sha256": _sha256(ev.path),
              "extractor": {"method": "vlm", "provider": backend.provider, "model": backend.model,
-                           "served_model": call["model"], "prompt_version": PROMPT_VERSION},
-             "usage": {**usage, "at": call["at"]}, "records": records}
+                           "served_model": served, "prompt_version": PROMPT_VERSION},
+             "usage": {**usage, "at": at}, "records": records}
     path = cache_dir / f"{_cache_key(ev.path, backend.provider, backend.model)}.json"
     path.write_text(json.dumps(entry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return entry
@@ -444,24 +468,23 @@ def _resolve(keys: list[str], aliases: dict[str, tuple[str, str]]) -> tuple[str 
 def _write_usage(path: Path, fresh: list, used: list, skipped: list) -> None:
     """Write the usage ledger (schema read by evaluation/usage_report.py).
 
-    ``calls``: the real calls behind the vision results used by this run. Failed
-    calls of this run come first; then, per vision-derived file, the call that
-    produced its result (from_cache true if that was an earlier run)."""
+    ``calls``: one record per API response behind the vision results used by this
+    run. Failed responses of this run come first (including those of files that
+    then fell back or were skipped); then, per vision-derived file, the responses
+    that produced its result (from_cache true if that was an earlier run)."""
     calls = [c for c in fresh if not c["ok"]]
     for u in used:
         if u["method"] != "vlm" or not u.get("usage"):
             continue
-        us = u["usage"]
         if u["from_cache"]:
-            calls.append({"file_id": u["file_id"], "provider": us.get("provider"), "model": us.get("model"),
-                          "input_tokens": int(us.get("input_tokens", 0)), "output_tokens": int(us.get("output_tokens", 0)),
-                          "ok": True, "usage_reported": bool(us.get("usage_reported", True)),
-                          "from_cache": True, "at": us.get("at")})
+            us = u["usage"]
+            recs = _response_records(u["file_id"], us, True, True, us.get("at"), u.get("provider"), u.get("model"))
+            calls += recs          # includes a failed first attempt, which was billed too
         else:
-            calls.append(next(c for c in fresh if c["ok"] and c["file_id"] == u["file_id"]))
+            calls += [c for c in fresh if c["ok"] and c["file_id"] == u["file_id"]]
     report = {
         "calls": calls,
-        "api_calls_this_run": len(fresh),
+        "api_calls_this_run": len(fresh),            # API responses, retries counted
         "input_tokens_this_run": sum(c["input_tokens"] for c in fresh),
         "output_tokens_this_run": sum(c["output_tokens"] for c in fresh),
         "files": used,

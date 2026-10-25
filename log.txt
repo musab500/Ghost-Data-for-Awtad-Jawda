@@ -300,3 +300,24 @@ repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
 
+## [2026-10-25T03:22:46Z] Person B update_9: per-response usage ledger for truncation retries
+
+User Prompt (verbatim, secrets redacted):
+[Attached: 91ace2e6-person-b-update_9.zip, no accompanying text]
+
+Agent Response Summary:
+Extracted the zip in isolation (no unsafe paths, 33 files) and diffed it against update_8 and the remote (no new commits on origin). Real changes: llm_provider.py now retries a truncated answer once (vision limit 4096 -> 8192, retry 16384) and returns usage["attempts"], one entry per billed API response; list_models/check_env --list; default Gemini classifier model name changed; secret scanning in package.sh; the obsolete patch_skip_without_anthropic.py was removed. The vision_json signature is unchanged. Adapted code/multimodal.py so the usage ledger records one entry per API response (a truncated response and its retry are two billed calls; they were previously merged into one record and would have undercounted calls in usage_report). Added tests, including one that runs a truncation+retry through Person B's real GeminiProvider with a fake client into my ledger. Verified on an overlay of my branch + update_9: 110 unit tests OK (0 skipped, google-genai installed); tools/final_run.py --out passes with output byte-identical to the previous dry run (sha a455d19c...). Still no Gemini key in the session: the real run on the 11 screenshots remains blocked and no vision results exist.
+
+Actions:
+* python3 -I zip extraction, diffs; edited code/multimodal.py, code/tests/test_multimodal.py, code/parsers/NOTES.md, log.txt
+* Built a scratch overlay (my branch + update_9), ran unit tests and tools/final_run.py --out /tmp/dry9.csv, tools/check_env.py
+* Pushed person-a (GitHub token supplied by the user earlier, used in memory only, [REDACTED])
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none
+

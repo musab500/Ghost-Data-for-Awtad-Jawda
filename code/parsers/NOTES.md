@@ -179,10 +179,13 @@ its `expected_output.csv`. The format is described in that folder's README.
 * **Usage ledger `code/.cache/multimodal_usage.json`**, in the schema
   `evaluation/usage_report.py` reads (verified against it): `calls` is a list of
   `{file_id, provider, model, input_tokens, output_tokens, ok, usage_reported,
-  from_cache, at}`. It lists the **real calls behind the vision results the run
-  used**: calls made now (`from_cache: false`; failed ones have `ok: false`) and,
-  for results served from a cache, the call that produced them (`from_cache:
-  true`, original timestamp). So a zero-call re-run still reports the one-time
+  from_cache, at}`, **one record per API response**: when the provider retries a
+  truncated answer (`usage["attempts"]`, update_9) the cut-off response is a record
+  with `ok: false, error_kind: "truncated"` and the retry another with `retry: true`,
+  since both are billed. It lists the **real responses behind the vision results
+  the run used**: those made now (`from_cache: false`; failed ones have `ok:
+  false`) and, for results served from a cache, those that produced them
+  (`from_cache: true`, original timestamp). So a zero-call re-run still reports the one-time
   extraction cost, and a run that used only PDF text or manual transcriptions
   reports no calls. Tokens are as returned by the provider; nothing is estimated.
   Also: `api_calls_this_run`, `files` (how each file was satisfied), `files_skipped`.
@@ -206,13 +209,14 @@ ledger, failures, lookup order) and through Person B's real `llm_provider` modul
 with a fake provider installed (`_ProviderLayer`); Person B's `usage_report.py`
 reads the ledger correctly; the `google-genai` SDK accepts the config and schema
 client-side. **Not verified:** that Gemini accepts the schema/prompt, that
-`gemini-3.6-flash` (the unconfirmed default) exists, and the quality of its
+`gemini-3.6-flash` (the unconfirmed default; use `check_env.py --list`) exists, and the quality of its
 transcriptions. Run `python3 tools/check_env.py --ping` first.
 
 **To run it** (whoever has the key, in a checkout with `.env`; `pip install -r requirements.txt`):
 
 ```bash
-python3 tools/check_env.py --ping                                   # model name + key work?
+python3 tools/check_env.py --list                                   # Flash model names this key can see
+python3 tools/check_env.py --ping                                   # chosen vision model + key work?
 python3 tools/compare_multimodal.py --run --freeze --out code/evaluation/multimodal_comparison.md
 MULTIMODAL_ALLOW_MANUAL=0 python3 code/main.py --out /tmp/vlm.csv   # VLM-only run
 python3 tools/compare_multimodal.py --pipeline-diff                 # do any of the 518 rows change?
