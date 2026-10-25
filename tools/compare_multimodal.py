@@ -53,7 +53,7 @@ def _norm_record(r: dict, aliases: dict) -> tuple[str | None, dict | None, str |
     if cat is not None and cat not in CATEGORIES:
         return rid, None, f"invalid category {cat!r}"
     return rid, {
-        "system_id": system or r.get("system_id") or "",
+        "system_id": system or (r.get("system_id") if r.get("system_id") in multimodal.KNOWN_SYSTEMS else "") or "",
         "category": cat,
         "state": state,
         "identifiers": frozenset(n for n in (normalize_identifier(x) for x in r.get("identifiers") or []) if n),

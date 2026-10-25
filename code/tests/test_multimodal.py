@@ -20,6 +20,7 @@ from parsers import load_evidence  # noqa: E402
 from parsers.activity import parse_activity, resource_aliases  # noqa: E402
 from parsers.manifest import load_manifest  # noqa: E402
 
+multimodal._sleep = lambda s: None                      # no real waiting in tests
 multimodal.PRIOR_RUNS_PATH = Path("/nonexistent/prior_runs.json")   # keep the real superseded-run ledger out of tests
 
 
@@ -540,3 +541,58 @@ class IdPrefixCategoryAndPriorRuns(unittest.TestCase):
             finally:
                 multimodal.PRIOR_RUNS_PATH = old
         self.assertEqual([c["input_tokens"] for c in calls], [3])
+
+
+class PacingAndRateLimit(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.sleeps = []
+        self._old = multimodal._sleep
+        multimodal._sleep = self.sleeps.append
+        self.addCleanup(setattr, multimodal, "_sleep", self._old)
+        _o, _s, skipped = load_evidence(Path(__file__).resolve().parents[2] / "dataset")
+        self.pngs = [e for e in skipped if e.kind == "png"][:3]
+
+    def _backend(self, behaviour):
+        calls = []
+
+        def call(system, prompt, image, mime, schema):
+            calls.append(1)
+            return behaviour(len(calls))
+        return multimodal.VisionBackend("fakeprov", "fake-model-1", call), calls
+
+    def _run(self, backend):
+        return multimodal_observations(self.pngs, {}, cache_dir=self.tmp / "c", log=io.StringIO(),
+                                       usage_path=self.tmp / "u.json", frozen_dir=self.tmp / "none",
+                                       manual_dir=self.tmp / "none", backend=backend)
+
+    def test_pause_between_live_calls(self):
+        ok = lambda n: ({"records": []}, {"input_tokens": 1, "output_tokens": 1})
+        backend, calls = self._backend(ok)
+        self._run(backend)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(self.sleeps, [multimodal.CALL_PAUSE_SECONDS] * 2)
+
+    def test_persistent_429_backs_off_then_stops_spending_calls(self):
+        class Boom(Exception):
+            kind = "rate_limit"
+            usage = None
+
+        def fail(n):
+            raise Boom("429 RESOURCE_EXHAUSTED PerDay quota")
+        backend, calls = self._backend(fail)
+        self._run(backend)
+        self.assertEqual(len(calls), 1 + len(multimodal.RATE_LIMIT_BACKOFF))     # first file only
+        self.assertEqual(self.sleeps, list(multimodal.RATE_LIMIT_BACKOFF))
+        self.assertEqual(multimodal._quota_kind("x PerDay y"), "per-day quota")
+        self.assertEqual(multimodal._quota_kind("PerMinute"), "per-minute quota")
+
+    def test_product_name_is_not_a_system_id(self):
+        from parsers.manifest import EvidenceFile
+        ev = EvidenceFile(file_id="e", path=Path("x.png"), rel_path="x.png", origin="o",
+                          captured_at="2026-05-01T00:00:00Z")
+        r = {"resource_id": "audit_record_1", "keys": [], "system_id": "Sentinel", "category": "SECURITY_AUDIT_LOG",
+             "state": "FOUND", "identifiers": [], "observed_at": "", "notes": ""}
+        out = records_to_observations(ev, [r], {}, log=io.StringIO())
+        self.assertEqual(out[0].system_id, "security_service")

@@ -51,6 +51,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,10 +68,14 @@ CACHE_DIR = CODE_DIR / ".cache" / "multimodal"          # results of live calls 
 FROZEN_DIR = CODE_DIR / "multimodal_vlm"                # accepted results (committed)
 MANUAL_DIR = CODE_DIR / "multimodal_manual"             # manual transcriptions (committed fallback)
 USAGE_PATH = CODE_DIR / ".cache" / "multimodal_usage.json"
-PROMPT_VERSION = "v3"
+PROMPT_VERSION = "v4"
 # Default of MULTIMODAL_ALLOW_MANUAL ("1" = fallback allowed, "0" = never). Change this
 # to "0" once the accepted vision results are frozen in code/multimodal_vlm/ (see NOTES.md).
 MANUAL_FALLBACK_DEFAULT = "1"
+KNOWN_SYSTEMS = frozenset(SYSTEM_FOR_CATEGORY.values()) | {"marketing_platform", "object_storage"}
+CALL_PAUSE_SECONDS = float(os.environ.get("MULTIMODAL_CALL_PAUSE", "13"))   # between live calls
+RATE_LIMIT_BACKOFF = (30.0, 60.0, 120.0)        # extra waits after the provider's own retries gave up
+_sleep = time.sleep                              # replaced in tests
 MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "pdf": "application/pdf"}
 
 RECORD_SCHEMA = {
@@ -108,10 +113,10 @@ For each record return:
 - resource_id: the record's resource id if one is shown (e.g. export_1260), else ""
 - keys: every other reference shown for that record (file name, statement number,
   ticket number, customer key), exactly as displayed
-- system_id: the system the screen itself names (title bar, product name, source column), e.g.
-  account_service, search_service, analytics_platform, support_platform, export_service,
-  integration_service, backup_service, security_service, identity_service, marketing_platform,
-  object_storage; if the screen names none, the system that normally owns that category
+- system_id: the id of the internal service that owns the record, one of: account_service,
+  search_service, analytics_platform, support_platform, export_service, integration_service,
+  backup_service, security_service, identity_service, legal_service, marketing_platform,
+  object_storage. Never a product, brand or application name shown on the screen; if unsure, ""
 - category: one of {sorted(CATEGORIES)}. The prefix of a resource id names its category
   (account_ -> USER_PROFILE, search_ -> SEARCH_INDEX_ENTRY, backup_ -> BACKUP_ARCHIVE,
   tombstone_ -> ACCOUNT_TOMBSTONE, audit_record_ -> SECURITY_AUDIT_LOG, ...); follow it
@@ -195,6 +200,7 @@ def multimodal_observations(files: list[EvidenceFile],
     used: list[dict] = []         # how each file was satisfied
     skipped: list[dict] = []
     out: list[Observation] = []
+    n_live, rate_limited = 0, False
     for ev in sorted(files, key=lambda e: e.file_id):
         if ev.kind == "pdf":
             text = pdf_text(ev.path)
@@ -206,8 +212,22 @@ def multimodal_observations(files: list[EvidenceFile],
             skipped.append({"file_id": ev.file_id, "reason": f"unsupported type {ev.kind}"})
             continue
         entry, from_cache = _cached_vlm_entry(ev, backend, cache_dir, frozen_dir), True
-        if entry is None and backend is not None:
+        if entry is None and backend is not None and not rate_limited:
+            if n_live:
+                _sleep(CALL_PAUSE_SECONDS)
+            n_live += 1
             entry, from_cache = _call_vision(ev, backend, cache_dir, fresh, log), False
+            for wait in RATE_LIMIT_BACKOFF:
+                if entry is not None or not fresh or fresh[-1].get("error_kind") != "rate_limit":
+                    break
+                print(f"multimodal: {ev.file_id}: rate limited ({_quota_kind(_LAST_ERROR[0])}); "
+                      f"waiting {wait:.0f}s before retrying", file=log)
+                _sleep(wait)
+                entry = _call_vision(ev, backend, cache_dir, fresh, log)
+            if entry is None and fresh and fresh[-1].get("error_kind") == "rate_limit":
+                rate_limited = True      # a quota error persisted: do not spend more calls on it
+                print(f"multimodal: STOP: rate limit persisted for {ev.file_id} ({_quota_kind(_LAST_ERROR[0])}); "
+                      "no further live calls in this run", file=log)
         if entry is None and allow_manual:
             entry = _manual_entry(ev, manual_dir)
             if entry is not None:
@@ -390,6 +410,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_LAST_ERROR = [""]
+
+
+def _quota_kind(message: str) -> str:
+    """Per-minute vs per-day, only when the provider's message says so."""
+    m = (message or "").lower().replace(" ", "")
+    if "perday" in m or "daily" in m:
+        return "per-day quota"
+    if "perminute" in m:
+        return "per-minute quota"
+    return "quota window not stated in the message"
+
+
 def _call_vision(ev: EvidenceFile, backend: VisionBackend, cache_dir: Path, fresh: list, log) -> dict | None:
     """One vision call for one file. Returns the cache entry, or None (with a
     warning) on any failure: this function never raises. Every attempt is
@@ -404,7 +437,8 @@ def _call_vision(ev: EvidenceFile, backend: VisionBackend, cache_dir: Path, fres
         kind = getattr(e, "kind", type(e).__name__)
         fresh += _response_records(ev.file_id, getattr(e, "usage", None), False, False, _now(),
                                    backend.provider, backend.model, kind)
-        print(f"multimodal: WARNING {ev.file_id}: vision call failed [{kind}]: {str(e)[:200]}", file=log)
+        _LAST_ERROR[0] = str(e)
+        print(f"multimodal: WARNING {ev.file_id}: vision call failed [{kind}]: {str(e)[:600]}", file=log)
         return None
     at = _now()
     fresh += _response_records(ev.file_id, usage, True, False, at, backend.provider, backend.model)
@@ -459,7 +493,10 @@ def records_to_observations(ev: EvidenceFile, records: list[dict],
                 observed = t
         except ValueError:
             pass
-        system = system or r.get("system_id") or SYSTEM_FOR_CATEGORY.get(cat or "", "")
+        said = (r.get("system_id") or "").strip()
+        if said not in KNOWN_SYSTEMS:              # a product/brand name is not a system id
+            said = ""
+        system = system or said or SYSTEM_FOR_CATEGORY.get(cat or "", "")
         out.append(Observation(
             resource_id=rid, system_id=system, category=cat, state=state, identifiers=ids,
             observed_at=observed, evidence_id=ev.file_id, source_kind="image",
