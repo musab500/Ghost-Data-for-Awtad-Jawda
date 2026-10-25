@@ -1,0 +1,93 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v4",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_23",
+  "file_path": "evidence/images/customer_export_console_20260618.png",
+  "file_sha256": "18b95c1bd8b8956e40216df935498a9f3c181ea2a69b5cd6d3c0841a816d5557",
+  "records": [
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [
+        "marcus.lee@northstar.shop"
+      ],
+      "keys": [
+        "customer_export_1261.zip"
+      ],
+      "notes": "Data export entry currently collecting files.",
+      "observed_at": "2026-06-20T14:18:00Z",
+      "resource_id": "export_1261",
+      "state": "IDENTIFIABLE",
+      "system_id": "export_service"
+    },
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [
+        "ingrid.dahl@outlook.com"
+      ],
+      "keys": [
+        "customer_export_1260.zip"
+      ],
+      "notes": "Ready export archive belonging to ingrid.dahl@outlook.com.",
+      "observed_at": "2026-06-18T06:42:00Z",
+      "resource_id": "export_1260",
+      "state": "IDENTIFIABLE",
+      "system_id": "export_service"
+    },
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [
+        "sara.kim@northstar.shop"
+      ],
+      "keys": [
+        "customer_export_1259.zip"
+      ],
+      "notes": "Data export currently packaging files.",
+      "observed_at": "2026-06-17T11:03:00Z",
+      "resource_id": "export_1259",
+      "state": "IDENTIFIABLE",
+      "system_id": "export_service"
+    },
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [
+        "daniel.park@northstar.shop"
+      ],
+      "keys": [
+        "customer_export_1258.zip"
+      ],
+      "notes": "Ready export package for daniel.park@northstar.shop.",
+      "observed_at": "2026-06-16T09:27:00Z",
+      "resource_id": "export_1258",
+      "state": "IDENTIFIABLE",
+      "system_id": "export_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:34:33Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1835,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 584,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1835,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 584,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}

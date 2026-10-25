@@ -418,10 +418,12 @@ class RealGeminiProviderWithFakeClient(unittest.TestCase):
             aliases = resource_aliases(parse_activity(DATASET)[0])
             saved = os.environ.pop("MULTIMODAL_ALLOW_MANUAL", None)
             os.environ["MULTIMODAL_ALLOW_MANUAL"] = "0"
+            os.environ["MULTIMODAL_LIVE"] = "1"        # the provider is a scripted fake: no network
             try:
                 out = multimodal_observations([ev], aliases, cache_dir=tmp / "c", log=io.StringIO(),
                                               manual_dir=tmp / "m", frozen_dir=tmp / "f", usage_path=tmp / "u.json")
             finally:
+                os.environ.pop("MULTIMODAL_LIVE", None)
                 os.environ.pop("MULTIMODAL_ALLOW_MANUAL", None)
                 if saved is not None:
                     os.environ["MULTIMODAL_ALLOW_MANUAL"] = saved
@@ -599,3 +601,26 @@ class PacingAndRateLimit(unittest.TestCase):
              "state": "FOUND", "identifiers": [], "observed_at": "", "notes": ""}
         out = records_to_observations(ev, [r], {}, log=io.StringIO())
         self.assertEqual(out[0].system_id, "security_service")
+
+
+class NoLiveCallWithoutOptIn(unittest.TestCase):
+    def test_default_backend_is_not_used_unless_multimodal_live(self):
+        def boom():
+            raise AssertionError("a live backend was requested")
+        old, env = multimodal.default_backend, os.environ.pop("MULTIMODAL_LIVE", None)
+        multimodal.default_backend = boom
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                multimodal_observations([], {}, cache_dir=Path(d) / "c", log=io.StringIO(),
+                                        usage_path=Path(d) / "u.json", frozen_dir=Path(d) / "f",
+                                        manual_dir=Path(d) / "m")
+            os.environ["MULTIMODAL_LIVE"] = "1"
+            with tempfile.TemporaryDirectory() as d, self.assertRaises(AssertionError):
+                multimodal_observations([], {}, cache_dir=Path(d) / "c", log=io.StringIO(),
+                                        usage_path=Path(d) / "u.json", frozen_dir=Path(d) / "f",
+                                        manual_dir=Path(d) / "m")
+        finally:
+            multimodal.default_backend = old
+            os.environ.pop("MULTIMODAL_LIVE", None)
+            if env is not None:
+                os.environ["MULTIMODAL_LIVE"] = env

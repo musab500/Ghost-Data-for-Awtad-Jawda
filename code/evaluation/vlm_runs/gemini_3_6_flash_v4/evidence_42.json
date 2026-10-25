@@ -1,0 +1,55 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v4",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_42",
+  "file_path": "evidence/images/deleted_account_reference_20260310.png",
+  "file_sha256": "68c28a72afd6ed184d5990d15c543f8a516face204f0360f732755a8a63c28be",
+  "records": [
+    {
+      "category": "USER_PROFILE",
+      "identifiers": [
+        "user_17"
+      ],
+      "keys": [
+        "user_17",
+        "ORD-20263245",
+        "CS-3245",
+        "CS-3378",
+        "FIN-7742"
+      ],
+      "notes": "Customer reference record user_17 with four linked records in Northstar Shop.",
+      "observed_at": "2026-03-10T07:18:00Z",
+      "resource_id": "user_17",
+      "state": "FOUND",
+      "system_id": "identity_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:35:58Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1835,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 140,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1835,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 140,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}

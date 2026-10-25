@@ -1,0 +1,87 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v2",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_32",
+  "file_path": "evidence/images/backup_restore_console_20260429.png",
+  "file_sha256": "2c246aa5843bec609b9ddfdf1154cd81e0fd61996f83954735e9856e48c18bf3",
+  "records": [
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "bluepeakco@outlook.com"
+      ],
+      "keys": [],
+      "notes": "Weekly snapshot archive stored in ap-southeast-1 region with AES-256 encryption.",
+      "observed_at": "2026-04-26T02:00:00Z",
+      "resource_id": "backup_9291",
+      "state": "IDENTIFIABLE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "miller.logistics@company.com"
+      ],
+      "keys": [],
+      "notes": "Weekly snapshot archive stored in us-west-2 region with AES-256 encryption.",
+      "observed_at": "2026-04-26T02:00:00Z",
+      "resource_id": "backup_9288",
+      "state": "IDENTIFIABLE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "areed1433@gmail.com"
+      ],
+      "keys": [
+        "s3://northstar-backups/customer-platform/weekly/segment-42-20260426.tar.zst"
+      ],
+      "notes": "Weekly snapshot archive stored in eu-west-1 region with verified checksum.",
+      "observed_at": "2026-04-26T02:00:00Z",
+      "resource_id": "backup_9287",
+      "state": "IDENTIFIABLE",
+      "system_id": "backup_service"
+    },
+    {
+      "category": "BACKUP_ARCHIVE",
+      "identifiers": [
+        "summit-retail@company.com"
+      ],
+      "keys": [],
+      "notes": "Weekly snapshot archive stored in us-east-1 region with AES-256 encryption.",
+      "observed_at": "2026-04-26T02:00:00Z",
+      "resource_id": "backup_9286",
+      "state": "IDENTIFIABLE",
+      "system_id": "backup_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T03:41:33Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1574,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 2310,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1574,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 2310,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}

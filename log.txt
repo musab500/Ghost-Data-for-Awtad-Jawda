@@ -771,3 +771,24 @@ branch=person-a
 repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
+
+## [2026-10-25T09:00:00Z] Delivery documents prepared; unplanned live calls found and gated
+
+User Prompt (verbatim, secrets redacted):
+Decision: one final run of all 11 files on gemini-3.6-flash with prompt v5 when its quota is back (~15:00 Asia/Kuala_Lumpur). This is the last VLM attempt. Meanwhile (no live calls): 1) prepare the delivery documents: evaluation_report.md and usage_report.md must include a clear VLM section (models, prompt versions, every run with tokens, per-file agreement vs manual, the six rejected files and why); README must state that the committed multimodal observations are manual transcriptions verified against the images, with the VLM as a draft and cross-check. 2) when quota is back: single pass, 13s pause, stop on first failure or 429; review every difference against the images; freeze nothing unless all 11 verified; partial adoption per-file and documented. 3) then final_run.py --require-llm only if at least the classifier ran with a real model; otherwise without it and say so. Do not commit output.csv before that. 4) report the final row-level diff against the committed output.csv.
+
+Agent Response Summary:
+Added tools/vlm_section.py (generates code/evaluation/vlm_section.md from recorded runs and vlm_review.json), wired it into evaluation_report.md and usage_report.md, and updated README. While regenerating the reports I ran code/evaluation/main.py, which ran the pipeline with the real provider and made 9 live gemini-3.6-flash calls (prompt v5) plus some classifier calls, against the no-live-calls instruction. I recorded those calls in the ledger and the raw results, set them aside, and made live vision calls require MULTIMODAL_LIVE=1 or compare_multimodal.py --run (test added). The 9 results match the manual output except evidence_32's extra record; with them the 518-row output equals the committed output.csv.
+
+Actions:
+* new tools/vlm_section.py, code/evaluation/vlm_review.json, code/evaluation/vlm_section.md, code/evaluation/vlm_runs/*
+* edited README.md, code/evaluation/main.py, report_template.md, usage_report.py, code/multimodal.py (MULTIMODAL_LIVE gate, catalog system_id), tests, .env.example
+* 9 unplanned live vision calls (gemini-3.6-flash, v5) recorded; no output.csv change
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none

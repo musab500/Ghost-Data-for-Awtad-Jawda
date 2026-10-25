@@ -55,10 +55,22 @@ deletion_requests.csv ─► classifier.py ── not a deletion ──► NOT_A
 | Stage | Method | Reason |
 |---|---|---|
 | Request classification | LLM through `llm_provider.py` (`classifier.py`) with a negation override and a deterministic fallback | Requests are free text in about ten languages and keyword matching misses negation |
-| Images (PNG) | Vision model through `llm_provider.vision_json`, results cached as JSON (`multimodal.py`, Person A) | Screenshots have no text layer. PDFs are read with `pdftotext`, no model |
+| Images (PNG) | **Manual transcriptions verified against the images** (`code/multimodal_manual/`, committed). A vision model (`llm_provider.vision_json`, `multimodal.py`) was used as a draft and cross-check; its results are compared per file and used only where verified | Screenshots have no text layer. PDFs are read with `pdftotext`, no model |
 | Identity, parsing, temporal state, policy, ordering, validation | Plain Python | Exact matching, timestamps and rule application must be reproducible and auditable |
 
 The model never decides state, policy or step order.
+
+### Screenshot observations: what is committed and how the vision model was used
+
+The 11 PNG screenshots are turned into observations from **manual transcriptions that were checked against the
+images** (`code/multimodal_manual/`, committed, no API call). A vision model (Gemini, through `llm_provider.py`) was
+run on the same screenshots as a **draft and cross-check**: every VLM result was compared with the manual
+transcription and each difference was judged by opening the image. A VLM result enters the pipeline only if it
+matches the image (frozen in `code/multimodal_vlm/`); otherwise the manual transcription is used. The runs, models,
+prompt versions, tokens, per-file agreement and the rejected files are in
+`code/evaluation/evaluation_report.md` (section 5) and `code/evaluation/usage_report.md` (section 6);
+the reasoning is in `code/parsers/NOTES.md`. A live vision call needs an explicit opt-in
+(`MULTIMODAL_LIVE=1`, or `python3 tools/compare_multimodal.py --run`), so a normal run never spends model quota on images.
 
 ### Modules
 

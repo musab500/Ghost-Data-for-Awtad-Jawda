@@ -1,0 +1,109 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v2",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_37",
+  "file_path": "evidence/images/security_audit_explorer_20260905.png",
+  "file_sha256": "ca59f693f4e7002466b3fdeaf1bb6763618770963dd811b60003772d07b4b03b",
+  "records": [
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [],
+      "notes": "Audit record for account closure recorded for subject user_03.",
+      "observed_at": "2026-08-25T04:03:00Z",
+      "resource_id": "audit_record_003",
+      "state": "IDENTIFIABLE",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [],
+      "notes": "Audit record for session revoked for subject user_03.",
+      "observed_at": "2026-08-25T03:21:00Z",
+      "resource_id": "audit_record_002",
+      "state": "IDENTIFIABLE",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [],
+      "notes": "Audit record for recovery challenge completed for subject user_03.",
+      "observed_at": "2026-08-24T16:14:00Z",
+      "resource_id": "audit_record_001",
+      "state": "IDENTIFIABLE",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [],
+      "notes": "Audit record for email change confirmed for subject user_03.",
+      "observed_at": "2026-08-22T11:27:00Z",
+      "resource_id": "audit_record_006",
+      "state": "IDENTIFIABLE",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [],
+      "notes": "Audit record for login from new device for subject user_03.",
+      "observed_at": "2026-08-20T09:42:00Z",
+      "resource_id": "audit_record_005",
+      "state": "IDENTIFIABLE",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [],
+      "notes": "Audit record for password changed for subject user_03.",
+      "observed_at": "2026-08-18T14:05:00Z",
+      "resource_id": "audit_record_004",
+      "state": "IDENTIFIABLE",
+      "system_id": "security_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T03:42:06Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1600,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 4896,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1600,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 4896,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}

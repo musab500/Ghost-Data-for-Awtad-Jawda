@@ -1,0 +1,64 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v2",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_09",
+  "file_path": "evidence/images/search_index_inspector_20260901.png",
+  "file_sha256": "75afdb0ae53a4510c83399a70d88073cb4fb2747454095756e4ddad1a8c70605",
+  "records": [
+    {
+      "category": "SEARCH_INDEX_ENTRY",
+      "identifiers": [
+        "g.silva76@gmail.com",
+        "user_13"
+      ],
+      "keys": [
+        "user_13"
+      ],
+      "notes": "Search index entry for Gabriel Silva in customer_directory_v3.",
+      "observed_at": "2026-09-01T06:00:14Z",
+      "resource_id": "search_428",
+      "state": "IDENTIFIABLE",
+      "system_id": "search_service"
+    },
+    {
+      "category": "SEARCH_INDEX_ENTRY",
+      "identifiers": [
+        "g.silva76.jr@gmail.com"
+      ],
+      "keys": [],
+      "notes": "Search index entry for g.silva76.jr@gmail.com in customer_directory_v3.",
+      "observed_at": "2026-09-01T06:00:14Z",
+      "resource_id": "search_1874",
+      "state": "IDENTIFIABLE",
+      "system_id": "search_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T03:40:05Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1600,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 2211,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1600,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 2211,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}

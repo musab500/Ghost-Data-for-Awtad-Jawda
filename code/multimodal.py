@@ -191,14 +191,14 @@ def multimodal_observations(files: list[EvidenceFile],
 
     aliases: the catalog alias map (parsers.activity.resource_aliases), or the
     dataset directory, from which it is built (the main.py hook passes that).
-    backend: a VisionBackend, None (no model), or omitted to use llm_provider."""
+    backend: a VisionBackend, None (no model), or omitted: llm_provider when MULTIMODAL_LIVE=1, else no model."""
     load_env()
     if isinstance(aliases, (str, Path)):
         from parsers.activity import parse_activity, resource_aliases
         aliases = resource_aliases(parse_activity(Path(aliases))[0])
     aliases = aliases or {}
-    if backend is _AUTO:
-        backend = default_backend()
+    if backend is _AUTO:       # a live vision call needs an explicit opt-in (MULTIMODAL_LIVE=1) or --run
+        backend = default_backend() if os.environ.get("MULTIMODAL_LIVE") == "1" else None
     usage_path = usage_path or (USAGE_PATH if cache_dir == CACHE_DIR else cache_dir / "usage.json")
     cache_dir.mkdir(parents=True, exist_ok=True)
     allow_manual = os.environ.get("MULTIMODAL_ALLOW_MANUAL", MANUAL_FALLBACK_DEFAULT) != "0"
@@ -503,7 +503,9 @@ def records_to_observations(ev: EvidenceFile, records: list[dict],
         said = (r.get("system_id") or "").strip()
         if said not in KNOWN_SYSTEMS:              # a product/brand name is not a system id
             said = ""
-        system = system or said or SYSTEM_FOR_CATEGORY.get(cat or "", "")
+        # the catalog names the owning system of a category (as the parsers do); the model's guess is
+        # used only for categories the catalog does not map
+        system = system or SYSTEM_FOR_CATEGORY.get(cat or "", "") or said
         out.append(Observation(
             resource_id=rid, system_id=system, category=cat, state=state, identifiers=ids,
             observed_at=observed, evidence_id=ev.file_id, source_kind="image",

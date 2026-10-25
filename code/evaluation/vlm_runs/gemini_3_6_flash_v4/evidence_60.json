@@ -1,0 +1,50 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v4",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_60",
+  "file_path": "evidence/images/marketing_profile_console.png",
+  "file_sha256": "51fa0e6a38f8fa3629ba1b0d0b90b4ed139715956b97bfd09a6f1a6232c15df5",
+  "records": [
+    {
+      "category": "MARKETING_PROFILE",
+      "identifiers": [
+        "sj.park@naver.com",
+        "+82 10-5837-9451"
+      ],
+      "keys": [],
+      "notes": "Profile record displays user name, email, and phone number.",
+      "observed_at": "2026-09-15T23:40:00Z",
+      "resource_id": "marketing_001",
+      "state": "IDENTIFIABLE",
+      "system_id": "marketing_platform"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:36:20Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1835,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 104,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1835,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 104,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}

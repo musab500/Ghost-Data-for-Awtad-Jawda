@@ -212,7 +212,7 @@ Every call of every run is in the usage ledger (`code/multimodal_usage_prior_run
 merged into `code/.cache/multimodal_usage.json` by `multimodal.py`; 55 calls,
 66,639 input / 46,896 output tokens). Comparison files: `code/evaluation/multimodal_comparison_run1.md`,
 `..._run2_partial.md`, `..._gemini_3_6_flash_v4.md`, `..._flash_lite_v5.md`; raw run-5 JSON in
-`code/evaluation/vlm_runs/flash_lite_v5/`.
+`code/evaluation/vlm_runs/gemini_3_5_flash_lite_v5/`.
 
 **What changed in the prompt and why (generic wording only, nothing taken from sample outputs).**
 v2 -> v3: per-category state guidance and "do not copy an identifier onto a record that does not display

@@ -1,0 +1,127 @@
+{
+  "note": "Hand-written review of vision-model (VLM) results against the images (Person A). Machine-readable so tools/vlm_section.py can put it in the delivery reports. A file is 'accepted' only when its records, states, identifiers and ids match what the image shows; anything else keeps the manual transcription (code/multimodal_manual/).",
+  "runs": {
+    "run1": {
+      "model": "gemini-3.6-flash",
+      "prompt": "v2",
+      "dir": "gemini_3_6_flash_v2",
+      "note": "10 of 11 files; evidence_28 got 503 on 3 attempts"
+    },
+    "run2": {
+      "model": "gemini-3.6-flash",
+      "prompt": "v3",
+      "dir": "gemini_3_6_flash_v3",
+      "note": "4 of 11 files; the other 7 got HTTP 429 with no tokens; v3 let the model return a product name as system_id"
+    },
+    "run3": {
+      "model": "gemini-3.6-flash",
+      "prompt": "v4",
+      "dir": "gemini_3_6_flash_v4",
+      "note": "11 of 11, thinking off; made unintentionally by a unit test that used the real provider (test now hermetic)"
+    },
+    "run4": {
+      "model": "gemini-3.5-flash-lite",
+      "prompt": "v4",
+      "dir": null,
+      "note": "11 calls failed with HTTP 400: this model rejects a thinking budget; no tokens; fixed by a model-dependent thinking setting"
+    },
+    "run5": {
+      "model": "gemini-3.5-flash-lite",
+      "prompt": "v5",
+      "dir": "gemini_3_5_flash_lite_v5",
+      "note": "11 of 11, thinking skipped for this model"
+    },
+    "run6": {
+      "model": "gemini-3.6-flash",
+      "prompt": "v5",
+      "dir": "gemini_3_6_flash_v5",
+      "note": "9 of 11 files (evidence_46 and 60 not called); made unintentionally when code/evaluation/main.py ran the pipeline with the real provider; live calls now need MULTIMODAL_LIVE=1"
+    }
+  },
+  "reviews": {
+    "run5": {
+      "evidence_14": {
+        "accepted": true,
+        "reason": "data_flow_1121 and data_flow_9846 are ACTIVE: Mode 'Continuous', status Healthy, events/hour shown. Matches the image."
+      },
+      "evidence_04": {
+        "accepted": true,
+        "reason": "account_5762 row shows name, email and phone (IDENTIFIABLE); support_9538 is now listed from the 'Support: CS-8538 - support_9538' field. The manual user_11 on the support record is not displayed on that row."
+      },
+      "evidence_19": {
+        "accepted": true,
+        "reason": "Same record, state and identifiers; observed_at empty (falls back to the capture time)."
+      },
+      "evidence_37": {
+        "accepted": true,
+        "reason": "All six audit records, states and identifiers match; observed_at empty (falls back to the capture time)."
+      },
+      "evidence_46": {
+        "accepted": true,
+        "reason": "The one resolvable record matches; observed_at is the screen header time."
+      },
+      "evidence_09": {
+        "accepted": false,
+        "reason": "customer_reference user_13 of search_428 is displayed in the table; the VLM dropped it."
+      },
+      "evidence_23": {
+        "accepted": false,
+        "reason": "Owner e-mails of export_1258, export_1259 and export_1261 are displayed in the Owner column; the VLM dropped them."
+      },
+      "evidence_28": {
+        "accepted": false,
+        "reason": "support_1034 is a helpline ticket; the VLM gave category USER_PROFILE (the 'support_' prefix has no category mapping)."
+      },
+      "evidence_32": {
+        "accepted": false,
+        "reason": "The VLM adds backup_9281, which appears only in the activity feed ('restored - Completed'); its ACTIVE state is not shown."
+      },
+      "evidence_42": {
+        "accepted": false,
+        "reason": "The page is the retained reference user_17. The VLM listed the four linked records (order, two support, finance) mapped to tombstone_17 with state ACTIVE and never listed the page's own subject: case_46 loses VERIFY_RECORD_REDACTED."
+      },
+      "evidence_60": {
+        "accepted": false,
+        "reason": "The page shows marketing_001; the VLM returned resource_id marketing_1 (invented normalisation): case_63 flips to a wrong COMPLETE."
+      }
+    },
+    "run6": {
+      "evidence_14": {
+        "accepted": true,
+        "reason": "data flows ACTIVE (Continuous, Healthy); matches the image."
+      },
+      "evidence_19": {
+        "accepted": true,
+        "reason": "same record, state and identifiers as the image."
+      },
+      "evidence_28": {
+        "accepted": true,
+        "reason": "support_1034 is a SUPPORT_MESSAGE helpline ticket, identifiers match."
+      },
+      "evidence_37": {
+        "accepted": true,
+        "reason": "all six audit records, states and identifiers match the image."
+      },
+      "evidence_42": {
+        "accepted": true,
+        "reason": "the page's own subject user_17 is the one record, a retained reference without direct identifiers (pipeline output identical to manual)."
+      },
+      "evidence_09": {
+        "accepted": true,
+        "reason": "search_428 keeps user_13 and the e-mail, search_1874 the decoy e-mail; IDENTIFIABLE is right for rows that display name/e-mail."
+      },
+      "evidence_23": {
+        "accepted": true,
+        "reason": "all four exports with their Owner e-mails; IDENTIFIABLE is right because the owner e-mail is displayed."
+      },
+      "evidence_04": {
+        "accepted": true,
+        "reason": "account_5762 and support_9538 listed; the model's system_id identity_service is replaced by the catalog system account_service (the page is Customer Operations)."
+      },
+      "evidence_32": {
+        "accepted": false,
+        "reason": "adds backup_9281, which appears only in the activity feed ('restored - Completed'); its ACTIVE state is not shown."
+      }
+    }
+  }
+}

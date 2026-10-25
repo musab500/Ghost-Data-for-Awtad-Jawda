@@ -1,0 +1,85 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_14",
+  "file_path": "evidence/images/connector_management_console_20260807.png",
+  "file_sha256": "e81fabc93ea1b5f4c918d934cdb2bea05d61737adfcc29f281494f5d8ec46355",
+  "records": [
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [
+        "jain.aditi@gmail.com"
+      ],
+      "keys": [],
+      "notes": "Active data flow routing events to customer_analytics_warehouse.",
+      "observed_at": "2026-08-07T08:00:00Z",
+      "resource_id": "data_flow_1121",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    },
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [
+        "lucia-torres@gmail.com"
+      ],
+      "keys": [],
+      "notes": "Active data flow for customer analytics warehouse.",
+      "observed_at": "2026-08-07T08:00:00Z",
+      "resource_id": "data_flow_9846",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    },
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [],
+      "keys": [
+        "Order notifications"
+      ],
+      "notes": "Continuous connector routing order events to notification_service.",
+      "observed_at": "2026-08-07T08:00:00Z",
+      "resource_id": "",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    },
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [],
+      "keys": [
+        "Delivery tracking"
+      ],
+      "notes": "Continuous connector routing shipment events to logistics_warehouse.",
+      "observed_at": "2026-08-07T08:00:00Z",
+      "resource_id": "",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:55:17Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1936,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 484,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1936,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 484,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}

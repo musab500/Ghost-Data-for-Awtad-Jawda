@@ -1,0 +1,133 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.6-flash",
+    "prompt_version": "v4",
+    "provider": "gemini",
+    "served_model": "gemini-3.6-flash"
+  },
+  "file_id": "evidence_46",
+  "file_path": "evidence/images/object_storage_browser_20260213.png",
+  "file_sha256": "96e9a191380c29b9e0ab997007268c4cd6353cb6721ebd1ed4a32599d8d37e04",
+  "records": [
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "delivery_confirmation_19.pdf"
+      ],
+      "notes": "Delivery confirmation attachment stored in Nimbus Object Storage.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "delivery_confirmation_20.pdf"
+      ],
+      "notes": "Delivery confirmation PDF stored in object storage.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "return_label_4821.pdf"
+      ],
+      "notes": "Return label file version 1.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "return_label_4876.pdf"
+      ],
+      "notes": "Return label PDF stored in bucket.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "invoice_NS-10493.pdf"
+      ],
+      "notes": "Invoice PDF attachment listed in object storage.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "parcel_damage_7713.jpg"
+      ],
+      "notes": "Parcel damage image attachment stored in bucket.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [],
+      "keys": [
+        "customer_export_2026-02-10.zip"
+      ],
+      "notes": "User export archive zip file.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [],
+      "keys": [
+        "customer_export_2026-02-12.zip"
+      ],
+      "notes": "User export zip archive file.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:36:10Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1809,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.6-flash",
+        "ok": true,
+        "output_tokens": 605,
+        "provider": "gemini",
+        "requested_model": "gemini-3.6-flash",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1809,
+    "model": "gemini-3.6-flash",
+    "output_tokens": 605,
+    "provider": "gemini",
+    "requested_model": "gemini-3.6-flash",
+    "usage_reported": true
+  }
+}
