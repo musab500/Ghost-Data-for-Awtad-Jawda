@@ -145,106 +145,99 @@ its `expected_output.csv`. The format is described in that folder's README.
 ### multimodal.py (Person A owns it)
 
 * **PDFs:** text comes from `pdftotext` (or `pypdf` as a fallback) and is
-  interpreted deterministically. A PDF goes to the vision model only if no text
-  can be extracted. One Observation is emitted per resource the document names,
-  either by explicit id or through a catalog alias (`resource_aliases`). A
-  `retain until` date becomes `raw.retention_until`.
+  interpreted deterministically; a PDF goes to the vision model only if no text
+  can be extracted. One Observation per resource the document names, by explicit
+  id or through a catalog alias (`resource_aliases`). A `retain until` date
+  becomes `raw.retention_until`.
   * `legal_retention_register_20260529.pdf` lists order refs and user_ids but no
-    resource ids, so it emits **nothing**. This is consistent with the gold
-    answers for cases 08, 12, 17 and 21, none of which has a legal-hold step.
-* **PNGs:** one vision call per file with the `anthropic` SDK
-  (`client.messages.create`, strict JSON-schema output, `effort: low` on models
-  that support it, no beta features). The prompt is `VISION_PROMPT` in
-  `multimodal.py`. The model comes from `MULTIMODAL_MODEL` (default
-  `claude-opus-5-5`). Each result is validated: state and category must be in
-  `models.STATES` / `CATEGORIES`, and every record must name a resource id or a
-  catalog alias, otherwise it is dropped with a warning.
-* **Lookup order per file**, so re-runs make zero calls:
+    resource ids, so it emits **nothing**. This matches the gold answers for
+    cases 08, 12, 17 and 21, none of which has a legal-hold step.
+* **PNGs:** one call per file through **`llm_provider.vision_json(system, prompt,
+  image_bytes, mime, schema) -> (parsed, usage)`** (Person B; Gemini by default).
+  `multimodal.py` imports no model SDK. The prompt and schema live in
+  `multimodal.py` (`SYSTEM_PROMPT`, `VISION_PROMPT`, `RECORD_SCHEMA`, version
+  `PROMPT_VERSION`). The schema's `state` and `category` are enums built from
+  `models.STATES` / `models.CATEGORIES`, and every record is validated again:
+  a record is dropped, with a warning, if its state/category is outside the
+  vocabulary or it names neither a resource id nor a catalog alias.
+* **Lookup order per file** (a re-run makes zero calls):
 
   | # | Source | Notes |
   |---|---|---|
-  | 1 | `code/.cache/multimodal/<sha256(bytes+model+prompt)>.json` | API results; gitignored |
-  | 2 | `code/multimodal_vlm/` | **frozen copies of API results, committed**, so `code.zip` reproduces the run without a key (`--freeze`) |
-  | 3 | `code/multimodal_manual/` | hand transcriptions made without the API; fallback only, with a warning; **ignored when `MULTIMODAL_ALLOW_MANUAL=0`** |
-  | 4 | API call | only if `ANTHROPIC_API_KEY` is set; the result goes to (1) |
+  | 1 | `code/.cache/multimodal/<sha256(bytes + provider + model + PROMPT_VERSION)>.json` | live-call results; gitignored; exact (provider, model) match |
+  | 2 | `code/multimodal_vlm/` | **frozen, accepted results; committed**, so `code.zip` reproduces the run with no key. Matched by file hash + prompt version, whichever model produced them |
+  | 3 | a live call | only if `llm_provider` has a configured provider; the result goes to (1) |
+  | 4 | `code/multimodal_manual/` | hand transcriptions made without a model: a **documented fallback**, used with a warning, and **never** when `MULTIMODAL_ALLOW_MANUAL=0` (the final run) |
 
-* **Key and settings** come from the environment or a `.env` file (repo root or
-  `code/`; see `.env.example`). Only `ANTHROPIC_API_KEY`, `MULTIMODAL_MODEL` and
-  `MULTIMODAL_ALLOW_MANUAL` are read from it, existing variables win, and values
-  are never printed. Without a key and a cached result, the file is skipped with
-  a warning.
-* **A failed API call never raises.** `main.py`'s hook turns any exception into
-  "no multimodal evidence at all", so errors, refusals and malformed JSON are
-  warnings and the file is skipped (a refusal or malformed response still counts
-  its tokens in the usage file).
-* **Usage:** `code/.cache/multimodal_usage.json` holds `api_calls_this_run` (served
-  model, input/output tokens, stop reason per call), `api_calls_count`, the token
-  sums, and `files_used` (how each file was satisfied). `cached_usage_total` sums
-  the real usage recorded when each cached API result was produced, so a re-run
-  with 0 calls still reports the one-time extraction cost. Nothing is estimated;
-  manual transcriptions and PDF text have no usage.
+  With no provider configured, a cached or frozen result for the file's bytes is
+  still used (whichever model made it); with none, the file is skipped with a warning.
+* **A failed call never raises.** `main.py`'s hook turns any exception into "no
+  multimodal evidence at all", so every `LLMFailure` (and any other error, or a
+  payload without `records`) is a warning, the file is skipped (or falls back),
+  nothing is cached, and the attempt is recorded with whatever tokens the API
+  reported.
+* **Usage ledger `code/.cache/multimodal_usage.json`**, in the schema
+  `evaluation/usage_report.py` reads (verified against it): `calls` is a list of
+  `{file_id, provider, model, input_tokens, output_tokens, ok, usage_reported,
+  from_cache, at}`. It lists the **real calls behind the vision results the run
+  used**: calls made now (`from_cache: false`; failed ones have `ok: false`) and,
+  for results served from a cache, the call that produced them (`from_cache:
+  true`, original timestamp). So a zero-call re-run still reports the one-time
+  extraction cost, and a run that used only PDF text or manual transcriptions
+  reports no calls. Tokens are as returned by the provider; nothing is estimated.
+  Also: `api_calls_this_run`, `files` (how each file was satisfied), `files_skipped`.
+* **Observations** carry `raw["method"]`: `pdf_text`, `vlm:<provider>/<model>` or
+  `manual_transcription` (the evaluation report groups by it).
+* **No `anthropic` import any more**: `tools/patch_skip_without_anthropic.py` is
+  obsolete (nothing in `test_multimodal.py` needs that SDK).
 
-### Real VLM run of the screenshots: status and procedure
+### Real vision run of the screenshots: status and procedure
 
-**Status: NOT YET RUN.** The session that built this had no `ANTHROPIC_API_KEY`,
-no `.env`, and could not be given one, so there is no VLM result and no
-comparison table yet. **No numbers are claimed here.** The comparison section of
-`evaluation_report.md` must wait for the run below.
+**Status: NOT YET RUN.** The sessions that built this had no Gemini key (no
+`.env`, nothing in the environment; `tools/check_env.py` says "provider: none"),
+so there is **no vision-model result, no comparison table and no conclusions yet,
+and none are claimed here**. The 11 screenshots are currently covered only by the
+hand transcriptions in `code/multimodal_manual/` (made by Claude in the dev session
+from the images; not API calls, no usage).
 
-What *was* verified: the request path through the real SDK (anthropic 2.3.0)
-against a **local stub server** (`VisionCallViaStubServer` in
-`code/tests/test_multimodal.py`): request path, image block, JSON schema,
-`output_config`, auth header, response parsing, cache write, real-usage
-recording, zero calls on re-run, and error/refusal handling. A stub proves what
-we send and how we parse; it does **not** prove that the live API accepts the
-request. The first real call is the first such proof.
+What *has* been verified without a key: the whole path with a **fake provider**
+(`VisionViaBackend` in `code/tests/test_multimodal.py`: call contract, cache key,
+ledger, failures, lookup order) and through Person B's real `llm_provider` module
+with a fake provider installed (`_ProviderLayer`); Person B's `usage_report.py`
+reads the ledger correctly; the `google-genai` SDK accepts the config and schema
+client-side. **Not verified:** that Gemini accepts the schema/prompt, that
+`gemini-3.6-flash` (the unconfirmed default) exists, and the quality of its
+transcriptions. Run `python3 tools/check_env.py --ping` first.
 
-**To run it** (needs `pip install anthropic` and a key in `.env` or the environment):
+**To run it** (whoever has the key, in a checkout with `.env`; `pip install -r requirements.txt`):
 
 ```bash
+python3 tools/check_env.py --ping                                   # model name + key work?
 python3 tools/compare_multimodal.py --run --freeze --out code/evaluation/multimodal_comparison.md
-MULTIMODAL_ALLOW_MANUAL=0 python3 code/main.py          # final run: VLM results only
-python3 tools/compare_multimodal.py --pipeline-diff     # did any of the 518 rows change vs manual?
+MULTIMODAL_ALLOW_MANUAL=0 python3 code/main.py --out /tmp/vlm.csv   # VLM-only run
+python3 tools/compare_multimodal.py --pipeline-diff                 # do any of the 518 rows change?
 ```
 
-`--run` makes at most one call per PNG (11) with manual transcriptions
-forbidden; `--freeze` copies the API results into `code/multimodal_vlm/` (commit
-them); the report lists per file the records matched / missing / extra and the
-field mismatches (`observed_at` differences are shown but do not change
-pipeline output).
+`--run` makes at most one call per PNG (11), with manual transcriptions forbidden.
+`--freeze` copies the results into `code/multimodal_vlm/` (**commit them**; if a
+result is wrong, edit nothing: re-run or fix the prompt and bump `PROMPT_VERSION`).
+The report lists per file the records matched / missing / extra and field
+mismatches. **Then every difference must be judged by opening the image**
+(`dataset/evidence/images/<file>`): which side is right, and why. Send the
+`multimodal_comparison.md` and the frozen JSONs to Person A to do that and write
+the conclusions here; `observed_at` differences are shown but do not change output.
 
-**Why `MULTIMODAL_ALLOW_MANUAL` still defaults to fallback-on.** Measured on the
-518 rows (`--pipeline-diff` with no VLM result available): forbidding the manual
-transcriptions changes **12 rows (2.3%)**, and **8 of them flip from INCOMPLETE to
-a wrong COMPLETE** (cases 35, 39, 50, 52, 53, 55, 61 and 63; case_45/46/33/34
-lose steps). A default of 0 before the VLM results are frozen would silently
+**Why `MULTIMODAL_ALLOW_MANUAL` still defaults to fallback-on**
+(`MANUAL_FALLBACK_DEFAULT = "1"` in `multimodal.py`). Measured on the 518 rows
+(`--pipeline-diff`, no vision result available): forbidding the manual
+transcriptions changes **12 rows (2.3%)** and **flips 8 statuses from INCOMPLETE
+to a wrong COMPLETE** (cases 35, 39, 50, 52, 53, 55, 61, 63; cases 33, 34, 45, 46
+lose steps). Defaulting to 0 before the vision results are frozen would silently
 degrade the shipped output and make a clean `code.zip` run differ from
-`output.csv`. Once `code/multimodal_vlm/` is committed, lookup order guarantees
-the VLM result is used whenever it exists, and the final run uses
-`MULTIMODAL_ALLOW_MANUAL=0` to make that strict. Flipping the default to 0 is then
-a one-line change in `_cached_entry`.
-
-### Pending change in Person B's files: `tools/patches/person_b_integration.patch`
-
-`git apply tools/patches/person_b_integration.patch`, then regenerate `output.csv`.
-It changes two things:
-1. **`code/main.py`** replaces the per-case `direct_links(ident)` loop with one
-   `self.idx.link_requests([RequestRef(...), ...])` call (about 10 lines). Without
-   the windows, evidence about one request of a person leaks into their other
-   request: case_07 gets object_19 and case_17 gets tombstone_17.
-2. **`code/evaluation/main.py`'s baseline guard uses `>=` instead of `==`.** It
-   asserted `status == 31`, so any improvement crashes it.
-
-Measured through Person B's `evaluate_samples` on the 32 samples:
-
-| State | Status | Exact | P | R | F1 | Field acc. |
-|---|---|---|---|---|---|---|
-| main (no windows) | 32/32 | 23/32 | 0.959 | 0.964 | 0.961 | 0.934 |
-| + patch (windows) | **32/32** | **25/32** | **0.979** | **0.964** | **0.971** | **0.966** |
-
-case_07 and case_17 become exact matches. Of the 518 output rows, **4 change**
-(case_33, case_46, case_52, case_61), all belonging to the three multi-request
-users below; the other 514 rows are byte-identical.
+`output.csv`. Once `code/multimodal_vlm/` is committed, the lookup order uses the
+frozen results whenever they exist, and flipping the default is the one-line
+change of `MANUAL_FALLBACK_DEFAULT` to `"0"`. The final run should use
+`MULTIMODAL_ALLOW_MANUAL=0` explicitly in the meantime.
 
 ### Classifier cross-check (CLASSIFY_REQUEST)
 
@@ -298,6 +291,13 @@ repeated either.
 holds *any* of its linking evidence gives the **same owners for every resource of
 all three multi-request users** in this data, so the choice changes no output.
 First-evidence ownership is used because it is one-to-one by construction.
+
+**Measured effect** (through Person B's `evaluate_samples`, 32 samples): status
+32/32 -> 32/32; exact sequence 23 -> **25**/32; precision 0.959 -> **0.979**; recall
+0.964; F1 0.961 -> **0.971**; field accuracy 0.934 -> **0.966**. case_07 and case_17
+become exact matches. Of the 518 output rows only **4 change** (case_33, 46, 52,
+61), all belonging to the three people below. Person B's `main.py` calls
+`link_requests`.
 
 **Counts (32 samples + 518 evaluation = 550 requests):** 547 distinct user_ids;
 **3 user_ids have two requests**, 544 have one; 0 have three or more. 0 ties in

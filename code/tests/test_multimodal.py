@@ -1,5 +1,6 @@
 """Tests for multimodal.py (Person A). No network: the vision API is never
 called because ANTHROPIC_API_KEY is removed for these tests."""
+import hashlib
 import io
 import json
 import os
@@ -82,256 +83,254 @@ class Multimodal(unittest.TestCase):
                          [("account_3", "FOUND", {"a@b.co"})])
         self.assertEqual(log.getvalue().count("dropped"), 3)
 
-    def test_no_key_and_no_cache_skips_with_warning(self):
-        with tempfile.TemporaryDirectory() as d:
-            log = io.StringIO()
-            png = [e for e in self.skipped if e.kind == "png"][:1]
-            out = multimodal_observations(png, self.aliases, cache_dir=Path(d), log=log,
-                                          manual_dir=Path(d) / "none")
-            self.assertEqual(out, [])
-            self.assertIn("not processed", log.getvalue())
-            usage = (Path(d) / "usage.json").read_text()
-            self.assertIn('"api_calls_count": 0', usage)
-
-    def test_cached_api_result_becomes_observation(self):
-        # A cached API result (same key the real call would write) is used
-        # without any API call, and its fields map onto the Observation.
-        ev = next(e for e in self.skipped if e.file_id == "evidence_28")   # support ticket PNG
-        cached = {"file_id": ev.file_id, "file_sha256": multimodal._sha256(ev.path),
-                  "extractor": {"method": "api", "model": multimodal._model(),
-                                "prompt_version": multimodal.PROMPT_VERSION},
-                  "usage": {"input_tokens": 1234, "output_tokens": 56},
-                  "records": [{"resource_id": "support_1034", "keys": ["CS-5034"],
-                               "system_id": "support_platform", "category": "SUPPORT_MESSAGE",
-                               "state": "IDENTIFIABLE", "identifiers": ["KAgyeman8947@fastmail.com"],
-                               "observed_at": "2026-05-24T06:59:00Z", "notes": "ticket"}]}
-        with tempfile.TemporaryDirectory() as d:
-            key = multimodal._cache_key(ev.path, multimodal._model())
-            (Path(d) / f"{key}.json").write_text(json.dumps(cached))
-            out = multimodal_observations([ev], self.aliases, cache_dir=Path(d), log=io.StringIO(),
-                                          manual_dir=Path(d) / "none")
-            usage = json.loads((Path(d) / "usage.json").read_text())
-        o, = out
-        self.assertEqual((o.resource_id, o.system_id, o.category, o.state, o.source_kind),
-                         ("support_1034", "support_platform", "SUPPORT_MESSAGE", "IDENTIFIABLE", "image"))
-        self.assertEqual((o.evidence_id, o.captured_at), ("evidence_28", ev.captured_at))
-        self.assertEqual(o.identifiers, {"kagyeman8947@fastmail.com"})
-        self.assertEqual(o.observed_at, "2026-05-24T06:59:00Z")
-        self.assertEqual(usage["api_calls_count"], 0)
-        self.assertEqual(usage["files_used"][0]["usage"], {"input_tokens": 1234, "output_tokens": 56})
-
-    def test_cache_key_depends_on_model_and_prompt(self):
-        ev = self.skipped[0]
-        self.assertNotEqual(multimodal._cache_key(ev.path, "model-a"), multimodal._cache_key(ev.path, "model-b"))
-
     def test_main_py_hook_call_shape(self):
         # main.py calls multimodal_observations(skipped, dataset_dir)
-        out = multimodal_observations(self.skipped, DATASET, log=io.StringIO(),
+        out = multimodal_observations(self.skipped, DATASET, log=io.StringIO(), backend=None,
                                       usage_path=Path(tempfile.mkdtemp()) / "u.json")
         self.assertIn("object_19", {o.resource_id for o in out})   # needs the catalog aliases
 
-    def test_manual_entries_can_be_disabled(self):
-        os.environ["MULTIMODAL_ALLOW_MANUAL"] = "0"
-        try:
-            with tempfile.TemporaryDirectory() as d:
-                png = [e for e in self.skipped if e.kind == "png"]
-                out = multimodal_observations(png, self.aliases, cache_dir=Path(d), log=io.StringIO())
-                self.assertEqual(out, [])
-        finally:
-            del os.environ["MULTIMODAL_ALLOW_MANUAL"]
+
+# ---------------------------------------------------------------------------
+# Vision path with a FAKE provider. Nothing here talks to any model or SDK.
+# ---------------------------------------------------------------------------
+class FakeFailure(Exception):
+    """Shaped like llm_provider.LLMFailure: .kind and (optionally) .usage."""
+
+    def __init__(self, kind, message="fake failure", usage=None):
+        super().__init__(f"[{kind}] {message}")
+        self.kind, self.usage = kind, usage
 
 
-class _StubAPI:
-    """A local HTTP server standing in for the Messages API. Records every
-    request it receives. NOT the real API: it only lets the real SDK run."""
-
-    def __init__(self, status=200, body=None):
-        import http.server
-        import threading
-        self.requests, self.status = [], status
-        self.body = body
-        outer = self
-
-        class Handler(http.server.BaseHTTPRequestHandler):
-            def do_POST(self):
-                raw = self.rfile.read(int(self.headers["Content-Length"]))
-                outer.requests.append({"path": self.path, "headers": dict(self.headers),
-                                       "json": json.loads(raw)})
-                payload = json.dumps(outer.body).encode()
-                self.send_response(outer.status)
-                self.send_header("content-type", "application/json")
-                self.send_header("content-length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
-
-            def log_message(self, *a):
-                pass
-
-        self.server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        self.url = f"http://127.0.0.1:{self.server.server_port}"
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-
-    def close(self):
-        self.server.shutdown()
-        self.server.server_close()
+GOOD = {"records": [{
+    "resource_id": "support_1034", "keys": ["CS-5034"], "system_id": "support_platform",
+    "category": "SUPPORT_MESSAGE", "state": "IDENTIFIABLE", "identifiers": ["Kagyeman8947@fastmail.com"],
+    "observed_at": "", "notes": "fake"}]}
 
 
-def _message(text, stop="end_turn", model="claude-opus-5-5", i=1500, o=321):
-    return {"id": "msg_stub", "type": "message", "role": "assistant", "model": model,
-            "content": [{"type": "text", "text": text}], "stop_reason": stop, "stop_sequence": None,
-            "usage": {"input_tokens": i, "output_tokens": o}}
+class FakeProvider:
+    """Records what it is called with; returns a canned result or raises."""
+
+    def __init__(self, provider="fakeprov", model="fake-model-1", payload=GOOD, fail=None, served=None):
+        self.provider, self.model, self.payload, self.fail = provider, model, payload, fail
+        self.served = served or model
+        self.calls = []
+
+    def call(self, system, prompt, image_bytes, mime, schema):
+        self.calls.append({"system": system, "prompt": prompt, "bytes": image_bytes, "mime": mime, "schema": schema})
+        if self.fail:
+            raise self.fail
+        return self.payload, {"provider": self.provider, "model": self.served, "requested_model": self.model,
+                              "input_tokens": 1500, "output_tokens": 321, "usage_reported": True}
+
+    def backend(self):
+        return multimodal.VisionBackend(self.provider, self.model, self.call)
 
 
-class VisionCallViaStubServer(unittest.TestCase):
-    ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "NO_PROXY", "no_proxy", "MULTIMODAL_MODEL",
-           "MULTIMODAL_ALLOW_MANUAL")
-
+class VisionViaBackend(unittest.TestCase):
     def setUp(self):
-        self.saved = {k: os.environ.get(k) for k in self.ENV}
-        os.environ["ANTHROPIC_API_KEY"] = "stub-key-for-tests"
-        os.environ["NO_PROXY"] = os.environ["no_proxy"] = "127.0.0.1,localhost"
-        os.environ.pop("MULTIMODAL_MODEL", None)
-        self.tmp = tempfile.mkdtemp()
+        self.saved = os.environ.pop("MULTIMODAL_ALLOW_MANUAL", None)
+        self.tmp = Path(tempfile.mkdtemp())
+        self.cache, self.frozen, self.manual = self.tmp / "cache", self.tmp / "frozen", self.tmp / "manual"
         _o, _s, skipped = load_evidence(DATASET)
         self.ev = next(e for e in skipped if e.file_id == "evidence_28")      # support ticket PNG
-        events, _a, _l = parse_activity(DATASET)
-        self.aliases = resource_aliases(events)
+        self.aliases = resource_aliases(parse_activity(DATASET)[0])
 
     def tearDown(self):
-        for k, v in self.saved.items():
-            os.environ.pop(k, None)
-            if v is not None:
-                os.environ[k] = v
+        os.environ.pop("MULTIMODAL_ALLOW_MANUAL", None)
+        if self.saved is not None:
+            os.environ["MULTIMODAL_ALLOW_MANUAL"] = self.saved
 
-    def run_once(self, api, **kw):
-        os.environ["ANTHROPIC_BASE_URL"] = api.url
+    def run_once(self, backend, files=None):
         log = io.StringIO()
-        out = multimodal_observations([self.ev], self.aliases, cache_dir=Path(self.tmp), log=log,
-                                      manual_dir=Path(self.tmp) / "none", frozen_dir=Path(self.tmp) / "none2", **kw)
-        return out, log.getvalue()
+        out = multimodal_observations(files or [self.ev], self.aliases, cache_dir=self.cache, log=log,
+                                      manual_dir=self.manual, frozen_dir=self.frozen, backend=backend,
+                                      usage_path=self.tmp / "usage.json")
+        return out, log.getvalue(), json.loads((self.tmp / "usage.json").read_text())
 
-    GOOD = json.dumps({"records": [{
-        "resource_id": "support_1034", "keys": ["CS-5034"], "system_id": "support_platform",
-        "category": "SUPPORT_MESSAGE", "state": "IDENTIFIABLE", "identifiers": ["Kagyeman8947@fastmail.com"],
-        "observed_at": "", "notes": "stub"}]})
+    def put_manual(self, state="FOUND"):
+        self.manual.mkdir(exist_ok=True)
+        e = {"file_id": self.ev.file_id, "file_sha256": multimodal._sha256(self.ev.path),
+             "extractor": {"method": "manual_transcription", "model": "by hand", "prompt_version": "manual-1"},
+             "usage": None, "records": [{**GOOD["records"][0], "state": state}]}
+        (self.manual / f"{e['file_sha256'][:16]}__manual.json").write_text(json.dumps(e))
 
-    def test_real_sdk_request_shape_cache_and_usage(self):
-        api = _StubAPI(200, _message(self.GOOD))
-        try:
-            out, log = self.run_once(api)
-            self.assertEqual(len(api.requests), 1)
-            req = api.requests[0]
-            self.assertEqual(req["path"], "/v1/messages")
-            auth = req["headers"].get("x-api-key") or req["headers"].get("Authorization") or ""
-            self.assertIn("stub-key-for-tests", auth)             # the SDK authenticates with the env key
-            body = req["json"]
-            self.assertEqual(body["model"], "claude-opus-5-5")
-            block = body["messages"][0]["content"][0]
-            self.assertEqual((block["type"], block["source"]["type"], block["source"]["media_type"]),
-                             ("image", "base64", "image/png"))
-            self.assertEqual(body["output_config"]["format"]["type"], "json_schema")
-            self.assertEqual(body["output_config"]["effort"], "low")
-            self.assertFalse(body["output_config"]["format"]["schema"]["additionalProperties"])
-            o, = out
-            self.assertEqual((o.resource_id, o.state, o.source_kind), ("support_1034", "IDENTIFIABLE", "image"))
-            self.assertEqual(o.identifiers, {"kagyeman8947@fastmail.com"})
-            # real usage from the response is what gets recorded
-            usage = json.loads((Path(self.tmp) / "usage.json").read_text())
-            self.assertEqual((usage["api_calls_count"], usage["input_tokens_this_run"], usage["output_tokens_this_run"]),
-                             (1, 1500, 321))
-            self.assertEqual(usage["api_calls_this_run"][0]["served_model"], "claude-opus-5-5")
-            # second run: served from the cache, zero calls, same observations, cached usage kept
-            out2, _ = self.run_once(api)
-            self.assertEqual(len(api.requests), 1)
-            self.assertEqual([x.resource_id for x in out2], ["support_1034"])
-            usage2 = json.loads((Path(self.tmp) / "usage.json").read_text())
-            self.assertEqual(usage2["api_calls_count"], 0)
-            self.assertEqual(usage2["cached_usage_total"]["input_tokens"], 1500)
-            self.assertEqual(usage2["cached_usage_total"]["output_tokens"], 321)
-        finally:
-            api.close()
+    def put_entry(self, directory, provider, model, state, usage=True, name=None):
+        directory.mkdir(exist_ok=True)
+        e = {"file_id": self.ev.file_id, "file_sha256": multimodal._sha256(self.ev.path),
+             "extractor": {"method": "vlm", "provider": provider, "model": model, "served_model": model,
+                           "prompt_version": multimodal.PROMPT_VERSION},
+             "usage": ({"provider": provider, "model": model, "input_tokens": 11, "output_tokens": 7,
+                        "usage_reported": True, "at": "2026-10-25T10:00:00Z"} if usage else None),
+             "records": [{**GOOD["records"][0], "state": state}]}
+        key = multimodal._cache_key(self.ev.path, provider, model)
+        (directory / (name or f"{key}.json")).write_text(json.dumps(e))
+        return e
 
-    def test_api_error_never_raises_and_nothing_is_cached(self):
-        api = _StubAPI(400, {"type": "error", "error": {"type": "invalid_request_error", "message": "bad"}})
-        try:
-            out, log = self.run_once(api)
+    # ---- the call and the ledger
+    def test_call_contract_cache_key_and_ledger(self):
+        fp = FakeProvider()
+        out, log, usage = self.run_once(fp.backend())
+        c, = fp.calls
+        self.assertEqual((c["mime"], c["bytes"]), ("image/png", self.ev.path.read_bytes()))
+        self.assertEqual(c["prompt"], multimodal.VISION_PROMPT)
+        self.assertEqual(c["schema"], multimodal.RECORD_SCHEMA)
+        item = c["schema"]["properties"]["records"]["items"]["properties"]
+        from models import CATEGORIES, STATES
+        self.assertEqual((item["state"]["enum"], item["category"]["enum"]), (sorted(STATES), sorted(CATEGORIES)))
+        key = hashlib.sha256(self.ev.path.read_bytes() + f"\x00fakeprov\x00fake-model-1\x00{multimodal.PROMPT_VERSION}".encode()).hexdigest()
+        self.assertTrue((self.cache / f"{key}.json").exists())             # sha256(bytes+provider+model+prompt)
+        o, = out
+        self.assertEqual((o.resource_id, o.state, o.source_kind, o.evidence_id), ("support_1034", "IDENTIFIABLE", "image", "evidence_28"))
+        self.assertEqual(o.identifiers, {"kagyeman8947@fastmail.com"})
+        self.assertEqual(o.raw["method"], "vlm:fakeprov/fake-model-1")
+        call, = usage["calls"]
+        self.assertEqual({k: call[k] for k in ("provider", "model", "input_tokens", "output_tokens", "ok", "from_cache")},
+                         {"provider": "fakeprov", "model": "fake-model-1", "input_tokens": 1500, "output_tokens": 321,
+                          "ok": True, "from_cache": False})
+        self.assertEqual((usage["api_calls_this_run"], usage["input_tokens_this_run"], usage["output_tokens_this_run"]), (1, 1500, 321))
+
+    def test_second_run_makes_zero_calls_and_ledger_keeps_the_original_call(self):
+        fp = FakeProvider()
+        self.run_once(fp.backend())
+        out, _, usage = self.run_once(fp.backend())
+        self.assertEqual(len(fp.calls), 1)
+        self.assertEqual([o.resource_id for o in out], ["support_1034"])
+        self.assertEqual(usage["api_calls_this_run"], 0)
+        call, = usage["calls"]                                     # the real call behind the result used
+        self.assertEqual((call["from_cache"], call["input_tokens"], call["output_tokens"]), (True, 1500, 321))
+
+    def test_a_different_model_is_a_different_cache_entry(self):
+        a, b = FakeProvider(model="m-a"), FakeProvider(model="m-b")
+        self.run_once(a.backend())
+        self.run_once(b.backend())
+        self.assertEqual((len(a.calls), len(b.calls)), (1, 1))
+        self.assertEqual(len(list(self.cache.glob("*.json"))), 2)
+
+    # ---- failures never raise and are never cached
+    def test_failure_with_usage_is_recorded_not_cached_and_does_not_raise(self):
+        spent = {"provider": "fakeprov", "model": "fake-model-1", "input_tokens": 900, "output_tokens": 55, "usage_reported": True}
+        out, log, usage = self.run_once(FakeProvider(fail=FakeFailure("truncated", "hit max tokens", spent)).backend())
+        self.assertEqual(out, [])
+        self.assertIn("[truncated]", log)
+        self.assertFalse(self.cache.exists() and list(self.cache.glob("*.json")))
+        call, = usage["calls"]
+        self.assertEqual((call["ok"], call["input_tokens"], call["output_tokens"], call["error_kind"]), (False, 900, 55, "truncated"))
+
+    def test_plain_exception_and_bad_payload_are_failures_too(self):
+        for fp in (FakeProvider(fail=RuntimeError("boom")), FakeProvider(payload={"nope": 1}),
+                   FakeProvider(payload={"records": "not a list"})):
+            out, log, usage = self.run_once(fp.backend())
             self.assertEqual(out, [])
-            self.assertIn("API call failed", log)
-            self.assertNotIn("stub-key-for-tests", log)
-            self.assertEqual(list(Path(self.tmp).glob("*.json")), [Path(self.tmp) / "usage.json"])
-        finally:
-            api.close()
+            self.assertIn("vision call failed", log)
+            self.assertEqual((usage["calls"][0]["ok"], usage["calls"][0]["input_tokens"]), (False, 0))
 
-    def test_refusal_and_malformed_json_are_skipped_but_tokens_counted(self):
-        for msg in (_message("", stop="refusal"), _message("not json at all")):
-            api = _StubAPI(200, msg)
-            try:
-                out, log = self.run_once(api)
-                self.assertEqual(out, [])
-                self.assertIn("not cached", log)
-                usage = json.loads((Path(self.tmp) / "usage.json").read_text())
-                self.assertEqual(usage["api_calls_count"], 1)     # the call happened and cost tokens
-            finally:
-                api.close()
+    # ---- lookup order: cache > frozen > live call > manual
+    def test_frozen_result_wins_over_a_live_call_whatever_model_made_it(self):
+        self.put_entry(self.frozen, "other", "other-model", "REDACTED", name="frozen.json")
+        fp = FakeProvider()
+        out, _, usage = self.run_once(fp.backend())
+        self.assertEqual(fp.calls, [])
+        self.assertEqual(out[0].state, "REDACTED")
+        self.assertEqual((usage["calls"][0]["provider"], usage["calls"][0]["from_cache"]), ("other", True))
 
-    def test_model_comes_from_environment_and_effort_only_for_known_families(self):
-        os.environ["MULTIMODAL_MODEL"] = "claude-sonnet-4-6"
-        api = _StubAPI(200, _message(self.GOOD, model="claude-sonnet-4-6"))
+    def test_exact_live_cache_beats_frozen(self):
+        self.put_entry(self.frozen, "fakeprov", "fake-model-1", "REDACTED", name="frozen.json")
+        self.put_entry(self.cache, "fakeprov", "fake-model-1", "IDENTIFIABLE")
+        out, _, _ = self.run_once(FakeProvider().backend())
+        self.assertEqual(out[0].state, "IDENTIFIABLE")
+
+    def test_live_call_is_tried_before_the_manual_fallback_and_manual_is_the_fallback(self):
+        self.put_manual("FOUND")
+        out, _, _ = self.run_once(FakeProvider().backend())
+        self.assertEqual(out[0].state, "IDENTIFIABLE")                       # model result, not the manual one
+        shutil.rmtree(self.cache)
+        out, log, _ = self.run_once(FakeProvider(fail=FakeFailure("rate_limit")).backend())
+        self.assertEqual((out[0].state, out[0].raw["method"]), ("FOUND", "manual_transcription"))
+        self.assertIn("using the manual transcription", log)
+
+    def test_manual_fallback_can_be_forbidden(self):
+        self.put_manual()
+        os.environ["MULTIMODAL_ALLOW_MANUAL"] = "0"
+        out, log, usage = self.run_once(None)
+        self.assertEqual(out, [])
+        self.assertEqual(usage["files_skipped"][0]["file_id"], "evidence_28")
+        self.assertIn("not processed", log)
+
+    def test_no_provider_uses_any_frozen_or_cached_result_and_otherwise_skips(self):
+        out, log, usage = self.run_once(None)
+        self.assertEqual((out, usage["api_calls_this_run"], usage["calls"]), ([], 0, []))
+        self.assertIn("no provider configured", log)
+        self.put_entry(self.cache, "somebody", "some-model", "FOUND")
+        out, _, _ = self.run_once(None)
+        self.assertEqual(out[0].state, "FOUND")
+
+    def test_results_with_another_prompt_version_are_ignored(self):
+        e = self.put_entry(self.frozen, "fakeprov", "fake-model-1", "REDACTED", name="old.json")
+        e["extractor"]["prompt_version"] = "v1"
+        (self.frozen / "old.json").write_text(json.dumps(e))
+        fp = FakeProvider()
+        out, _, _ = self.run_once(fp.backend())
+        self.assertEqual(len(fp.calls), 1)
+
+    def test_default_backend_is_none_without_a_configured_provider(self):
         try:
-            self.run_once(api)
-            body = api.requests[0]["json"]
-            self.assertEqual(body["model"], "claude-sonnet-4-6")
-            self.assertNotIn("effort", body["output_config"])
-        finally:
-            api.close()
-
-
-class DotenvAndLookupOrder(unittest.TestCase):
-    def test_dotenv_loads_only_whitelisted_names_and_never_overrides(self):
-        saved = {k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "MULTIMODAL_MODEL", "SOME_OTHER_VAR")}
-        for k in saved:
-            os.environ.pop(k, None)
+            import llm_provider as llm
+        except ImportError:
+            self.assertIsNone(multimodal.default_backend())
+            return
+        saved = {k: os.environ.get(k) for k in ("LLM_PROVIDER",)}
+        os.environ["LLM_PROVIDER"] = "none"
+        llm.reset_provider()
         try:
-            with tempfile.TemporaryDirectory() as d:
-                env = Path(d) / ".env"
-                env.write_text('# comment\nexport ANTHROPIC_API_KEY="sk-from-dotenv"\n'
-                               "MULTIMODAL_MODEL=claude-sonnet-5-5\nSOME_OTHER_VAR=leak\n\nbroken line\n")
-                os.environ["MULTIMODAL_MODEL"] = "already-set"
-                names = multimodal.load_dotenv([env])
-            self.assertEqual(names, ["ANTHROPIC_API_KEY"])
-            self.assertEqual(os.environ["ANTHROPIC_API_KEY"], "sk-from-dotenv")
-            self.assertEqual(os.environ["MULTIMODAL_MODEL"], "already-set")
-            self.assertNotIn("SOME_OTHER_VAR", os.environ)
-            self.assertEqual(multimodal.load_dotenv([Path("/nonexistent/.env")]), [])
+            self.assertIsNone(multimodal.default_backend())
         finally:
-            for k, v in saved.items():
-                os.environ.pop(k, None)
-                if v is not None:
-                    os.environ[k] = v
+            os.environ.pop("LLM_PROVIDER", None)
+            if saved["LLM_PROVIDER"] is not None:
+                os.environ["LLM_PROVIDER"] = saved["LLM_PROVIDER"]
+            llm.reset_provider()
 
-    def test_lookup_order_api_cache_beats_frozen_beats_manual(self):
-        ev = next(e for e in load_evidence(DATASET)[2] if e.file_id == "evidence_28")
-        def entry(method, state):
-            return {"file_id": ev.file_id, "file_sha256": multimodal._sha256(ev.path),
-                    "extractor": {"method": method, "model": multimodal._model(), "prompt_version": multimodal.PROMPT_VERSION},
-                    "usage": None, "records": [{"resource_id": "support_1034", "keys": [], "system_id": "support_platform",
-                                                "category": "SUPPORT_MESSAGE", "state": state, "identifiers": [],
-                                                "observed_at": "", "notes": ""}]}
-        with tempfile.TemporaryDirectory() as c, tempfile.TemporaryDirectory() as f, tempfile.TemporaryDirectory() as m:
-            c, f, m = Path(c), Path(f), Path(m)
-            key = multimodal._cache_key(ev.path, multimodal._model())
-            (m / f"{multimodal._sha256(ev.path)[:16]}__manual.json").write_text(json.dumps(entry("manual_transcription", "FOUND")))
-            self.assertEqual(multimodal._cached_entry(ev, c, m, f)["records"][0]["state"], "FOUND")      # manual fallback
-            (f / f"{key}.json").write_text(json.dumps(entry("api", "REDACTED")))
-            self.assertEqual(multimodal._cached_entry(ev, c, m, f)["records"][0]["state"], "REDACTED")   # frozen beats manual
-            (c / f"{key}.json").write_text(json.dumps(entry("api", "IDENTIFIABLE")))
-            self.assertEqual(multimodal._cached_entry(ev, c, m, f)["records"][0]["state"], "IDENTIFIABLE")  # cache beats frozen
-            os.environ["MULTIMODAL_ALLOW_MANUAL"] = "0"
-            try:
-                (c / f"{key}.json").unlink(); (f / f"{key}.json").unlink()
-                self.assertIsNone(multimodal._cached_entry(ev, c, m, f))           # strict final run: no manual
-            finally:
-                del os.environ["MULTIMODAL_ALLOW_MANUAL"]
+
+class _ProviderLayer(unittest.TestCase):
+    """Wiring through Person B's real llm_provider module, with a fake provider installed."""
+
+    def test_default_backend_routes_to_llm_provider_vision_json(self):
+        try:
+            import llm_provider as llm
+        except ImportError:
+            self.skipTest("llm_provider.py not present in this checkout yet (Person B)")
+
+        class Prov:
+            name, seen = "fakegem", []
+
+            def model_for(self, role):
+                return "fake-vision-9"
+
+            def complete_json(self, *a):
+                raise AssertionError("not used")
+
+            def vision_json(self, system, prompt, image_bytes, mime, schema):
+                Prov.seen.append((mime, len(image_bytes)))
+                if mime == "application/fail":
+                    raise llm.LLMFailure("rate_limit", "slow down", {"provider": "fakegem", "model": "fake-vision-9",
+                                                                     "input_tokens": 5, "output_tokens": 0})
+                return GOOD, {"provider": "fakegem", "model": "fake-vision-9-001", "requested_model": "fake-vision-9",
+                              "input_tokens": 10, "output_tokens": 4, "usage_reported": True}
+
+        llm.set_provider(Prov())
+        try:
+            b = multimodal.default_backend()
+            self.assertEqual((b.provider, b.model), ("fakegem", "fake-vision-9"))
+            parsed, usage = b.call("s", "p", b"png-bytes", "image/png", {})
+            self.assertEqual((parsed, usage["input_tokens"], Prov.seen), (GOOD, 10, [("image/png", 9)]))
+            # a real LLMFailure (with usage) goes through the ledger path without raising
+            ev = next(e for e in load_evidence(DATASET)[2] if e.file_id == "evidence_28")
+            fresh, log = [], io.StringIO()
+            bad = multimodal.VisionBackend("fakegem", "fake-vision-9",
+                                           lambda s, p, i, m, sc: b.call(s, p, i, "application/fail", sc))
+            self.assertIsNone(multimodal._call_vision(ev, bad, Path(tempfile.mkdtemp()), fresh, log))
+            self.assertEqual((fresh[0]["ok"], fresh[0]["input_tokens"], fresh[0]["error_kind"]), (False, 5, "rate_limit"))
+        finally:
+            llm.reset_provider()
 
 
 def _compare_tool():
@@ -375,23 +374,25 @@ class CompareTool(unittest.TestCase):
         self.assertEqual([x["field"] for x in c["mismatches"]], ["observed_at"])
         self.assertTrue(c["pipeline_identical"])
 
-    def test_report_and_freeze_use_only_api_results(self):
+    def test_report_and_freeze_use_only_model_results(self):
         mm, tool = multimodal, self.tool
         ev = next(e for e in load_evidence(DATASET)[2] if e.file_id == "evidence_28")
         with tempfile.TemporaryDirectory() as d:
             cache, frozen = Path(d) / "cache", Path(d) / "frozen"
             cache.mkdir()
             manual = tool._manual_entry(ev, mm.MANUAL_DIR)
-            api = {"file_id": ev.file_id, "file_sha256": mm._sha256(ev.path),
-                   "extractor": {"method": "api", "model": mm._model(), "prompt_version": mm.PROMPT_VERSION},
-                   "usage": {"input_tokens": 1, "output_tokens": 1}, "records": manual["records"]}   # synthetic: copy of the manual one
-            (cache / f"{mm._cache_key(ev.path, mm._model())}.json").write_text(json.dumps(api))
+            entry = {"file_id": ev.file_id, "file_sha256": mm._sha256(ev.path),
+                     "extractor": {"method": "vlm", "provider": "fakeprov", "model": "m", "served_model": "m",
+                                   "prompt_version": mm.PROMPT_VERSION},
+                     "usage": {"input_tokens": 1, "output_tokens": 1},
+                     "records": manual["records"]}                  # synthetic: a copy of the manual one
+            (cache / "x.json").write_text(json.dumps(entry))
             text, tot = tool.build_report(DATASET, cache, frozen, mm.MANUAL_DIR)
             self.assertEqual((tot["compared"], tot["files"], tot["identical"]), (1, 11, 1))
             self.assertIn("no VLM result", text)
             self.assertEqual(tool.freeze(DATASET, cache, frozen), 1)
             self.assertEqual(len(list(frozen.glob("*.json"))), 1)
-            # a manual transcription is never reported as a VLM result
+            # a manual transcription is never reported as a model result
             self.assertIsNone(tool._vlm_entry(ev, Path(d) / "none", Path(d) / "none2"))
 
 

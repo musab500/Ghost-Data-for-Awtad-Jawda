@@ -2,9 +2,9 @@
 transcription (not part of the prediction path).
 
     python3 tools/compare_multimodal.py              # compare cached results; no API calls
-    python3 tools/compare_multimodal.py --run        # first call the VLM once per PNG (needs
-                                                     #   ANTHROPIC_API_KEY, e.g. in .env), then compare
-    python3 tools/compare_multimodal.py --freeze     # copy the API results into code/multimodal_vlm/
+    python3 tools/compare_multimodal.py --run        # first call the vision model once per PNG through
+                                                     #   llm_provider (GEMINI_API_KEY, e.g. in .env), then compare
+    python3 tools/compare_multimodal.py --freeze     # copy the live-call results into code/multimodal_vlm/
                                                      #   (committed, so code.zip reproduces without a key)
     python3 tools/compare_multimodal.py --pipeline-diff   # run code/main.py with manual transcriptions
                                                      #   allowed vs forbidden and list the changed rows
@@ -93,24 +93,14 @@ def _show(v):
 
 
 def _vlm_entry(ev, cache_dir: Path, frozen_dir: Path):
-    """The API result for this file (never a manual one), or None."""
-    name = f"{multimodal._cache_key(ev.path, multimodal._model())}.json"
-    for d in (cache_dir, frozen_dir):
-        p = d / name
-        if p.exists():
-            e = json.loads(p.read_text(encoding="utf-8"))
-            if e.get("extractor", {}).get("method") == "api":
-                return e
-    return None
+    """A vision-model result for this file (never a manual one), or None."""
+    sha = multimodal._sha256(ev.path)
+    found = multimodal._scan(frozen_dir, sha) + multimodal._scan(cache_dir, sha)
+    return found[0] if found else None
 
 
 def _manual_entry(ev, manual_dir: Path):
-    sha = multimodal._sha256(ev.path)
-    for p in sorted(manual_dir.glob(f"{sha[:16]}__*.json")):
-        e = json.loads(p.read_text(encoding="utf-8"))
-        if e.get("file_sha256") == sha:
-            return e
-    return None
+    return multimodal._manual_entry(ev, manual_dir)
 
 
 def build_report(dataset: Path, cache_dir: Path, frozen_dir: Path, manual_dir: Path) -> tuple[str, dict]:
@@ -161,17 +151,22 @@ def build_report(dataset: Path, cache_dir: Path, frozen_dir: Path, manual_dir: P
 
 
 def freeze(dataset: Path, cache_dir: Path, frozen_dir: Path) -> int:
+    """Copy the live-call results for the PNGs into the committed frozen directory."""
     _o, _s, skipped = load_evidence(dataset)
     frozen_dir.mkdir(parents=True, exist_ok=True)
     n = 0
     for ev in skipped:
         if ev.kind != "png":
             continue
-        name = f"{multimodal._cache_key(ev.path, multimodal._model())}.json"
-        src = cache_dir / name
-        if src.exists() and _vlm_entry(ev, cache_dir, Path("/nonexistent")):
-            shutil.copy(src, frozen_dir / name)
-            n += 1
+        sha = multimodal._sha256(ev.path)
+        for p in sorted(cache_dir.glob("*.json")) if cache_dir.is_dir() else []:
+            try:
+                e = json.loads(p.read_text(encoding="utf-8"))
+            except ValueError:
+                continue
+            if multimodal._is_vlm_entry(e, sha):
+                shutil.copy(p, frozen_dir / p.name)
+                n += 1
     return n
 
 
@@ -201,24 +196,26 @@ def pipeline_diff(dataset: Path) -> str:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dataset", default=str(REPO / "dataset"))
-    ap.add_argument("--run", action="store_true", help="call the VLM once per PNG first (needs ANTHROPIC_API_KEY)")
-    ap.add_argument("--freeze", action="store_true", help="copy API results into code/multimodal_vlm/")
+    ap.add_argument("--run", action="store_true", help="call the vision model once per PNG first (needs a provider key)")
+    ap.add_argument("--freeze", action="store_true", help="copy live-call results into code/multimodal_vlm/")
     ap.add_argument("--pipeline-diff", action="store_true")
     ap.add_argument("--out")
     a = ap.parse_args()
     ds = Path(a.dataset)
-    multimodal.load_dotenv()
+    multimodal.load_env()
     if a.run:
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            sys.exit("--run needs ANTHROPIC_API_KEY (environment or .env); nothing was called.")
-        os.environ["MULTIMODAL_ALLOW_MANUAL"] = "0"      # only API results may satisfy a PNG
+        backend = multimodal.default_backend()
+        if backend is None:
+            sys.exit("--run needs a vision provider: set GEMINI_API_KEY (environment or .env; see "
+                     "tools/check_env.py). Nothing was called.")
+        os.environ["MULTIMODAL_ALLOW_MANUAL"] = "0"      # only model results may satisfy a PNG
         _o, _s, skipped = load_evidence(ds)
         aliases = resource_aliases(parse_activity(ds)[0])
-        multimodal.multimodal_observations([e for e in skipped if e.kind == "png"], aliases)
-        print(f"usage written to {multimodal.USAGE_PATH}\n"
-              + multimodal.USAGE_PATH.read_text(encoding="utf-8")[:600], file=sys.stderr)
+        multimodal.multimodal_observations([e for e in skipped if e.kind == "png"], aliases, backend=backend)
+        print(f"provider {backend.provider}, model {backend.model}; usage ledger {multimodal.USAGE_PATH}:\n"
+              + multimodal.USAGE_PATH.read_text(encoding="utf-8")[:1500], file=sys.stderr)
     if a.freeze:
-        print(f"froze {freeze(ds, multimodal.CACHE_DIR, multimodal.FROZEN_DIR)} API result(s) into "
+        print(f"froze {freeze(ds, multimodal.CACHE_DIR, multimodal.FROZEN_DIR)} vision result(s) into "
               f"{multimodal.FROZEN_DIR}", file=sys.stderr)
     text, _ = build_report(ds, multimodal.CACHE_DIR, multimodal.FROZEN_DIR, multimodal.MANUAL_DIR)
     if a.pipeline_diff:
