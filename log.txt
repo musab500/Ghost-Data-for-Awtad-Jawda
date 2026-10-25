@@ -730,3 +730,23 @@ branch=person-a
 repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
+
+## [2026-10-25T07:00:00Z] Prompt v5, flash-lite 400 diagnosed (thinking setting), model-dependent thinking
+
+User Prompt (verbatim, secrets redacted):
+Decision: go with prompt v5 (generic wording) and ONE re-run when quota is back (~15:00 Asia/Kuala_Lumpur). Manual transcription remains the committed fallback. Before any live call: 1) diagnose the flash-lite 400 with exactly ONE file (evidence_14): first call without the thinking setting; if it succeeds, stop and make the thinking setting model-dependent. 2) Prompt v5, generic only. 3) Tests hermetic; keep all earlier calls in the ledger. 4) When quota is back: single run of all 11 files on gemini-3.6-flash (thinking off), 13s pause, stop on first 429. 5) Review every difference against the image; accept VLM only if verified; then final_run.py --require-llm; do not commit output.csv before. 6) Tell Person B to merge 1947b6f.
+
+Agent Response Summary:
+Wrote prompt v5 (data flows/backups only ACTIVE/DISABLED/BLOCKED, retained reference without identifiers is REDACTED, list every linked record). Diagnostic call 1 (flash-lite, evidence_14, no thinking setting, with schema) succeeded, so the 400 was the thinking budget; stopped after that one call. Made the thinking setting model-dependent (skip list plus learn-on-400), added a test, and recorded all earlier calls in the usage ledger. No further live calls; the real v5 run waits for quota.
+
+Actions:
+* edited code/multimodal.py (prompt v5), code/llm_provider.py, code/tests/test_llm_provider.py, code/multimodal_usage_prior_runs.json
+* one live diagnostic call (gemini-3.5-flash-lite, evidence_14); 118 tests pass; output.csv untouched
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none

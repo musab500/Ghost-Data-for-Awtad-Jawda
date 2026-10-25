@@ -68,7 +68,7 @@ CACHE_DIR = CODE_DIR / ".cache" / "multimodal"          # results of live calls 
 FROZEN_DIR = CODE_DIR / "multimodal_vlm"                # accepted results (committed)
 MANUAL_DIR = CODE_DIR / "multimodal_manual"             # manual transcriptions (committed fallback)
 USAGE_PATH = CODE_DIR / ".cache" / "multimodal_usage.json"
-PROMPT_VERSION = "v4"
+PROMPT_VERSION = "v5"
 # Default of MULTIMODAL_ALLOW_MANUAL ("1" = fallback allowed, "0" = never). Change this
 # to "0" once the accepted vision results are frozen in code/multimodal_vlm/ (see NOTES.md).
 MANUAL_FALLBACK_DEFAULT = "1"
@@ -121,19 +121,25 @@ For each record return:
   (account_ -> USER_PROFILE, search_ -> SEARCH_INDEX_ENTRY, backup_ -> BACKUP_ARCHIVE,
   tombstone_ -> ACCOUNT_TOMBSTONE, audit_record_ -> SECURITY_AUDIT_LOG, ...); follow it
 - state, by what the screen shows for that record:
-  * any record: FOUND = the record is listed and no direct identifier of a person is displayed
-    for it; NOT_FOUND = the screen says it does not exist
-  * IDENTIFIABLE = the record row itself displays a direct identifier (name, email, phone, email
-    hash). A record that only links to a user reference (a user id) is FOUND, not IDENTIFIABLE
-  * ANONYMIZED / REDACTED = kept, with the identifying fields shown as removed / masked
-  * data flows: ACTIVE = running or enabled, DISABLED = off or paused
-  * backups: ACTIVE = restorable (restore not blocked); BLOCKED = the screen shows restore blocked.
-    A backup is never IDENTIFIABLE or FOUND
+  * DATA_FLOW and BACKUP_ARCHIVE records take only ACTIVE (running / enabled / restorable),
+    DISABLED (off, paused, stopped) or BLOCKED (restore blocked). An identifier shown in a
+    selector or detail field does not make them IDENTIFIABLE
+  * every other record: FOUND = the record is listed and no direct identifier of a person is
+    displayed for it; NOT_FOUND = the screen says it does not exist; IDENTIFIABLE = the record's
+    own row or detail panel displays a direct identifier (name, email, phone, email hash); a
+    record that only links to a user reference (a user id) is FOUND, not IDENTIFIABLE
+  * ANONYMIZED / REDACTED = kept, with the identifying fields shown as removed / masked. A
+    retained reference or tombstone page that shows only a stable user reference and no direct
+    identifier (no name, email, phone, hash) is REDACTED
 - identifiers: every email, phone number, user_id and email hash displayed in that record's own
   row or detail panel. Do not copy an identifier shown elsewhere on the screen (another record,
   a header, a customer panel) onto a record that does not display it
 - observed_at: ISO-8601 UTC time the screen says the data was captured or refreshed, or "" if none
 - notes: one short factual sentence (at most 15 words)
+Include every record the page shows or links to: rows of a list, rows of a table, the detail
+panel, and records mentioned in an activity feed or in a field such as "Support" or "Linked
+record", even when the record has no row of its own. Do not drop a row because another record
+on the page looks more important.
 Transcribe only what is visible. Do not infer records that are not shown."""
 
 

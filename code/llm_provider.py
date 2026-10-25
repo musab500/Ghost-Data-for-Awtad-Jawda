@@ -270,6 +270,18 @@ def _with_truncation_retry(role: str, run) -> tuple[dict, dict]:
 # --------------------------------------------------------------------------- #
 #  Providers
 # --------------------------------------------------------------------------- #
+# Models that reject a thinking budget (HTTP 400 INVALID_ARGUMENT): the default list comes from a
+# diagnostic call (gemini-3.5-flash-lite answers without the setting and fails with it); further
+# models are learned in-process on the first 400 and then called without the setting.
+DEFAULT_NO_THINKING_MODELS = "gemini-3.5-flash-lite"
+_NO_THINKING_LEARNED: set[str] = set()
+
+
+def _no_thinking_models() -> set[str]:
+    listed = os.environ.get("VISION_NO_THINKING_MODELS", DEFAULT_NO_THINKING_MODELS)
+    return {m.strip() for m in listed.split(",") if m.strip()} | _NO_THINKING_LEARNED
+
+
 def _vision_thinking_budget() -> int | None:
     """Thinking-token budget for vision calls (VISION_THINKING_BUDGET): 0 = off (default); an
     integer sets the budget; "default" leaves the model's own setting."""
@@ -315,7 +327,7 @@ class GeminiProvider:
                "max_output_tokens": limit, "temperature": 0}
         if schema:
             cfg["response_json_schema"] = schema
-        budget = _vision_thinking_budget() if role == "vision" else None
+        budget = _vision_thinking_budget() if role == "vision" and model not in _no_thinking_models() else None
         if budget is not None:     # transcription needs no reasoning: spend (almost) no thinking tokens
             cfg["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
 
@@ -324,10 +336,10 @@ class GeminiProvider:
                 resp = self._get_client().models.generate_content(
                     model=model, contents=contents, config=types.GenerateContentConfig(**cfg))
             except Exception as e:  # noqa: BLE001 - a model that rejects the thinking setting runs without it
-                if "thinking_config" not in cfg or "thinking" not in str(e).lower() \
-                        or classify_exception(e)[1]:
+                if "thinking_config" not in cfg or classify_exception(e)[0] != "bad_request":
                     raise
                 cfg.pop("thinking_config")
+                _NO_THINKING_LEARNED.add(model)
                 resp = self._get_client().models.generate_content(
                     model=model, contents=contents, config=types.GenerateContentConfig(**cfg))
             return self._interpret(resp, model, schema)

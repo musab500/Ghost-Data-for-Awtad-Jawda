@@ -127,10 +127,27 @@ class GeminiProviderTests(unittest.TestCase):
         p.vision_json("s", "p", b"x", "image/png", SCHEMA)
         self.assertEqual(self.client.calls[0]["config"].thinking_config.thinking_budget, 128)
         os.environ["VISION_THINKING_BUDGET"] = "0"
-        p = self.provider([ValueError("400 INVALID_ARGUMENT: thinking budget is not supported"), gresp()])
+        self.addCleanup(lp._NO_THINKING_LEARNED.clear)
+        p = self.provider([type("ClientError", (Exception,), {"code": 400})("400 INVALID_ARGUMENT"), gresp()])
         p.vision_json("s", "p", b"x", "image/png", SCHEMA)
         self.assertIsNotNone(self.client.calls[0]["config"].thinking_config)
         self.assertIsNone(self.client.calls[1]["config"].thinking_config)
+
+    def test_models_that_reject_thinking_are_called_without_it(self):
+        os.environ["VISION_MODEL"] = "gemini-3.5-flash-lite"          # in the default skip list
+        self.addCleanup(os.environ.pop, "VISION_MODEL", None)
+        self.provider([gresp()]).vision_json("s", "p", b"x", "image/png", SCHEMA)
+        self.assertIsNone(self.client.calls[0]["config"].thinking_config)
+        # an unknown model that answers 400 is retried once without it and then remembered
+        os.environ["VISION_MODEL"] = "gemini-unknown-9"
+        self.addCleanup(lp._NO_THINKING_LEARNED.discard, "gemini-unknown-9")
+        gerr = type("ClientError", (Exception,), {"code": 400})
+        p = self.provider([gerr("400 INVALID_ARGUMENT. Request contains an invalid argument."), gresp(), gresp()])
+        p.vision_json("s", "p", b"x", "image/png", SCHEMA)
+        self.assertEqual(len(self.client.calls), 2)
+        self.assertIsNone(self.client.calls[1]["config"].thinking_config)
+        p.vision_json("s", "p", b"x", "image/png", SCHEMA)
+        self.assertIsNone(self.client.calls[2]["config"].thinking_config)    # remembered: no wasted call
 
     def test_model_env_override(self):
         os.environ["CLASSIFIER_MODEL"] = "gemini-custom"
