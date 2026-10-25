@@ -28,7 +28,7 @@ from datetime import timedelta
 
 from models import (ACTIVE, FOUND, IDENTIFIABLE, NOT_FOUND, ActivityEvent,
                     Identity, Observation, ResourceLink, Scope,
-                    category_for_resource, parse_ts)
+                    category_for_resource, iso, parse_ts)
 
 PRESENT_STATES = {FOUND, IDENTIFIABLE, ACTIVE}
 # Categories whose absence may be inferred from a snapshot that omits them.
@@ -78,6 +78,53 @@ class CaseWindow:
     # Resources directly linked to the case; their workflow actions reveal the
     # shape of the case's workflow run (see assign_workflow).
     direct_resources: set[str] = field(default_factory=set)
+
+
+@dataclass
+class RequestRef:
+    """One deletion request, as far as record linking is concerned."""
+    case_id: str
+    identity: Identity | None      # resolved identity (None = email resolved to nobody)
+    audit_at: str
+    requested_at: str = ""
+
+
+def group_by_person(refs: list[RequestRef]) -> dict[str, list[RequestRef]]:
+    """Requests grouped by resolved Identity.user_id (never by email: a person
+    may use an old and a new address), each group ordered by
+    (audit_at, requested_at, case_id)."""
+    groups: dict[str, list[RequestRef]] = defaultdict(list)
+    for r in refs:
+        if r.identity is not None:
+            groups[r.identity.user_id.lower()].append(r)
+    for rs in groups.values():
+        rs.sort(key=lambda r: (parse_ts(r.audit_at), r.requested_at, r.case_id))
+    return dict(groups)
+
+
+def request_windows(refs: list[RequestRef]) -> dict[str, tuple[str | None, bool]]:
+    """{case_id: (not_before, has_later_request)} - the evidence window of each
+    request of a person.
+
+    Let a_1 < ... < a_n be the DISTINCT audit_at times of one person's requests.
+    Request k owns linking evidence captured in
+        W_1 = (-inf, a_1]      W_k = (a_(k-1), a_k]      W_n = (a_(n-1), +inf)
+    * Upper bounds are inclusive ("at or before audit_at"); lower bounds are
+      exclusive, so evidence captured exactly at a_(k-1) belongs to request k-1.
+    * The last request is open-ended upward: evidence captured after its audit
+      still identifies the person's records (identity is not state), while
+      state_at() never uses it.
+    * Requests of one person with the same audit_at share one window.
+    * A person with a single request has the window (-inf, +inf)."""
+    out: dict[str, tuple[str | None, bool]] = {}
+    for rs in group_by_person(refs).values():
+        times = sorted({parse_ts(r.audit_at) for r in rs})
+        for r in rs:
+            t = parse_ts(r.audit_at)
+            earlier = [x for x in times if x < t]
+            prev = max(earlier) if earlier else None
+            out[r.case_id] = (iso(prev) if prev else None, any(x > t for x in times))
+    return out
 
 
 @dataclass
@@ -131,19 +178,23 @@ class EvidenceIndex:
                      has_later_request: bool = False) -> dict[str, list[str]]:
         """{resource_id: [reasons]} for resources carrying the person's identifiers.
 
-        * not_before: audit_at of the same person's previous request. Linking
-          evidence captured at or before it was already accounted for by that
-          request, so it does not link resources to this one.
-        * Linking evidence captured after audit_at still identifies the
-          person's records (identity is not state), but the state at audit_at
-          is only ever taken from evidence captured by then (state_at).
-          When the same person has a later request (has_later_request), such
-          evidence falls in that request's window and belongs to it instead.
+        Request windows (see request_windows): a resource belongs to the ONE
+        request whose window contains its FIRST linking evidence (the earliest
+        capture time of an observation, or catalog link, carrying one of the
+        person's identifiers). So, for this request:
+        * first linking evidence at or before not_before (the previous request's
+          audit_at) -> it belongs to an earlier request, and is not repeated;
+        * first linking evidence after audit_at while the person has a later
+          request (has_later_request) -> it belongs to that later request;
+        * otherwise it belongs here. For the person's last request this includes
+          evidence captured after audit_at (identity is not state); the state at
+          audit_at is still only ever taken from evidence captured by then.
+        A person with a single request has no window: nothing is excluded.
 
         A person has one primary account. When several USER_PROFILE records
-        are linked, accounts with linking evidence inside the case window
-        (after not_before, at or before audit_at) win over accounts only seen
-        later, and among those the most recently linked is kept."""
+        are linked, accounts with linking evidence inside the request window
+        win over accounts only seen later, and among those the most recently
+        linked is kept."""
         toks = identity.tokens()
         nb = parse_ts(not_before) if not_before else None
         cut = parse_ts(audit_at) if audit_at else None
@@ -153,12 +204,15 @@ class EvidenceIndex:
         for rid in rids:
             times = [parse_ts(o.captured_at) for o in self.obs_by_rid.get(rid, ()) if o.identifiers & toks]
             times += [parse_ts(l.observed_at) for l in self.links_by_rid.get(rid, ()) if l.identifiers & toks]
-            usable = [t for t in times if (nb is None or t > nb)
-                      and not (has_later_request and cut is not None and t > cut)]
-            if not usable:
+            if not times:
                 continue
-            in_window = [t for t in usable if cut is None or t <= cut]
-            rank[rid] = (bool(in_window), max(in_window or usable))
+            first = min(times)
+            if nb is not None and first <= nb:
+                continue                    # owned by an earlier request
+            if has_later_request and cut is not None and first > cut:
+                continue                    # owned by a later request
+            in_window = [t for t in times if (nb is None or t > nb) and (cut is None or t <= cut)]
+            rank[rid] = (bool(in_window), max(in_window or times))
             out[rid] = [f"identifier:{t}" for t in sorted(toks & self.tokens_of_rid(rid))]
         accounts = [r for r in out if self.category_of(r) == "USER_PROFILE"]
         if len(accounts) > 1:
@@ -166,6 +220,22 @@ class EvidenceIndex:
             for r in accounts:
                 if rank[r] < best:
                     del out[r]
+        return out
+
+    def link_requests(self, refs: list[RequestRef]) -> dict[str, dict[str, list[str]]]:
+        """{case_id: {resource_id: reasons}} for ALL requests at once: groups
+        them by resolved user_id, derives each person's evidence windows
+        (request_windows) and calls direct_links with them. Pass the samples and
+        the evaluation requests together: a person's earlier request may be in
+        either file. A request with no identity gets {}."""
+        windows = request_windows(refs)
+        out: dict[str, dict[str, list[str]]] = {}
+        for r in refs:
+            if r.identity is None:
+                out[r.case_id] = {}
+                continue
+            nb, later = windows[r.case_id]
+            out[r.case_id] = self.direct_links(r.identity, nb, r.audit_at, later)
         return out
 
     def category_of(self, rid: str) -> str | None:

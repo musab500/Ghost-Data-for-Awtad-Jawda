@@ -77,12 +77,15 @@ resource_aliases(events) -> dict[str, tuple[str, str]]        # business key -> 
 multimodal_observations(skipped_files, aliases, cache_dir=CACHE_DIR, log=sys.stderr) -> list[Observation]
 # state.py
 EvidenceIndex(observations, scopes, links=(), events=())
-    .direct_links(identity: Identity, not_before: str | None, audit_at: str | None)
-        -> dict[str, list[str]]  # resource_id -> reasons; not_before = audit_at of the person's previous request
+    .link_requests(refs: list[RequestRef]) -> dict[str, dict[str, list[str]]]
+        # case_id -> {resource_id: reasons}; groups ALL requests by user_id and applies the evidence windows
+    .direct_links(identity, not_before, audit_at, has_later_request)   # one request; used by link_requests
     .category_of(resource_id) -> str | None
     .assign_workflow(cases: list[CaseWindow]) -> dict[str, dict[str, str]]  # case_id -> {rid: reason}
     .state_at(resource_id, audit_at) -> ResourceState
     .evidence_tier(resource_id, audit_at) -> int               # 0 explicit, 1 snapshot-only, 2 none
+RequestRef(case_id, identity | None, audit_at, requested_at="")
+request_windows(refs) -> {case_id: (not_before | None, has_later_request)}
 CaseWindow(case_id, reported_at, audit_at, direct_categories: set, reported_status: str,
            expects_complete: bool, direct_resources: set)
 flagged_cases(direct_by_case, flags) -> dict[str, str]         # case_id -> activity_id
@@ -106,12 +109,10 @@ models.py. identity.py must include the following (see finding 1 above):
    `obs += multimodal_observations(skipped, resource_aliases(events))`.
 3. `idx = EvidenceIndex(obs + act_obs, scopes, links, events)`, built once.
    `rules = load_rules(ds)`.
-4. Resolve an `Identity` for **every** request, samples and evaluation together.
-   Then compute `direct[c] = idx.direct_links(identity, prev_audit[c], audit_at)`.
-   Here `prev_audit[c]` is the audit_at of the same person's previous request,
-   ordered by audit_at, or None. Some people have two requests (e.g.
-   case_46 / case_17). Evidence that predates the earlier request's audit
-   belongs to that request.
+4. Resolve an `Identity` for **every** request, samples and evaluation together,
+   then `direct = idx.link_requests([RequestRef(c, identity[c], audit_at, requested_at) ...])`
+   in ONE call over all requests. It groups them by resolved user_id and applies
+   the per-person evidence windows described under "Per-person request windows".
 5. For each case, compute
    `expects_complete = not any(decide(idx.state_at(r, audit), rules, audit).violates for r in direct[c])`.
    Skip None decisions.
@@ -182,21 +183,25 @@ its `expected_output.csv`. The format is described in that folder's README.
 
 ### Pending change in Person B's files: `tools/patches/person_b_integration.patch`
 
-`git apply tools/patches/person_b_integration.patch` makes two changes:
-1. **`code/main.py` passes the per-person request windows to `direct_links`**,
-   as `(previous request's audit_at, this audit_at, has a later request)`.
-   Without them, image/PDF evidence about one request of a person leaks into
-   their other request (e.g. leonie: case_46 March / case_17 August).
+`git apply tools/patches/person_b_integration.patch`, then regenerate `output.csv`.
+It changes two things:
+1. **`code/main.py`** replaces the per-case `direct_links(ident)` loop with one
+   `self.idx.link_requests([RequestRef(...), ...])` call (about 10 lines). Without
+   the windows, evidence about one request of a person leaks into their other
+   request: case_07 gets object_19 and case_17 gets tombstone_17.
 2. **`code/evaluation/main.py`'s baseline guard uses `>=` instead of `==`.** It
-   asserted `status == 31`, so the improvement to 32/32 crashed it.
+   asserted `status == 31`, so any improvement crashes it.
 
 Measured through Person B's `evaluate_samples` on the 32 samples:
 
 | State | Status | Exact | P | R | F1 | Field acc. |
 |---|---|---|---|---|---|---|
-| main before multimodal | 31/32 | 24/32 | 0.973 | 0.943 | 0.958 | 0.946 |
-| + multimodal.py (this branch, patch not applied) | 32/32 | 23/32 | 0.959 | 0.964 | 0.961 | 0.934 |
-| + patch applied | **32/32** | **25/32** | **0.979** | **0.964** | **0.971** | **0.966** |
+| main (no windows) | 32/32 | 23/32 | 0.959 | 0.964 | 0.961 | 0.934 |
+| + patch (windows) | **32/32** | **25/32** | **0.979** | **0.964** | **0.971** | **0.966** |
+
+case_07 and case_17 become exact matches. Of the 518 output rows, **4 change**
+(case_33, case_46, case_52, case_61), all belonging to the three multi-request
+users below; the other 514 rows are byte-identical.
 
 ### Classifier cross-check (CLASSIFY_REQUEST)
 
@@ -209,6 +214,57 @@ copies, marketing opt-outs, login help.
 Use these flags only to **cross-check** the LLM classifier, and report the
 agreement in the evaluation report. They are a workflow claim, so do not let
 them override the classifier.
+
+## Per-person request windows (`state.request_windows`, `EvidenceIndex.link_requests`)
+
+**Problem.** Some people file more than one request (a deletion in March, another
+in August). Evidence about an earlier episode still exists later, and the
+catalog links it to the same person, so it would be repeated in the later request.
+Gold answers show it is not: object_19 (linked 2026-02-13) is not in case_07
+(requested 2026-08-31), and tombstone_17 (linked 2026-03-10) is not in case_17.
+
+**Grouping.** Requests are grouped by the resolved `Identity.user_id`
+(case-insensitive), never by email, since a person may use an old and a new
+address. Samples and evaluation requests are grouped **together**: in all three
+multi-request cases the earlier request is an evaluation case.
+
+**Windows.** For one person, let a_1 < ... < a_n be the distinct `audit_at` times
+of their requests. Request k owns linking evidence captured in
+
+    W_1 = (-inf, a_1]      W_k = (a_(k-1), a_k]      W_n = (a_(n-1), +inf)
+
+* **Upper bounds are inclusive**, consistent with "at or before audit_at". Lower
+  bounds are exclusive, so evidence captured exactly at a_(k-1) belongs to
+  request k-1.
+* **The last window is open-ended.** Evidence captured after the person's final
+  audit still identifies their records (identity is not state). `state_at` never
+  uses it to establish a state.
+* Requests of one person with the **same** `audit_at` share one window (none
+  occur in the data). A person with one request has no window.
+
+**Ownership: first linking evidence.** A linking event is the capture time of an
+observation, or the time of a catalog link (`LINK_RESOURCE_IDENTITY`), that
+carries one of the person's identifiers. A resource belongs to the request whose
+window contains its **earliest** linking event, and to no other request of that
+person. A resource first seen in window 1 and observed again in window 2 stays
+with request 1. Workflow-assigned resources (no identifiers) are matched by
+`reported_at` in `assign_workflow`, one resource per case, so they are not
+repeated either.
+
+**Alternative considered.** Keeping a resource for *every* request whose window
+holds *any* of its linking evidence gives the **same owners for every resource of
+all three multi-request users** in this data, so the choice changes no output.
+First-evidence ownership is used because it is one-to-one by construction.
+
+**Counts (32 samples + 518 evaluation = 550 requests):** 547 distinct user_ids;
+**3 user_ids have two requests**, 544 have one; 0 have three or more. 0 ties in
+`audit_at`; 0 use more than one distinct email.
+
+| user_id | Earlier request | Later request |
+|---|---|---|
+| user_07 | case_61 (eval), audit 2026-02-14 | case_07 (sample), audit 2026-09-12 |
+| user_17 | case_46 (eval), audit 2026-03-11 | case_17 (sample), audit 2026-09-15 |
+| user_18 | case_52 (eval), audit 2026-06-19 | case_33 (eval), audit 2026-07-19 |
 
 ## Workflow assignment (state.assign_workflow)
 

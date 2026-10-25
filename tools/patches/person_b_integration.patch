@@ -1,6 +1,15 @@
 --- a/code/main.py
 +++ b/code/main.py
-@@ -115,13 +115,32 @@
+@@ -28,7 +28,7 @@
+ from models import norm_email  # noqa: E402
+ from parsers import load_evidence  # noqa: E402
+ from parsers.activity import parse_activity, non_deletion_flags  # noqa: E402
+-from state import EvidenceIndex, CaseWindow, flagged_cases  # noqa: E402
++from state import EvidenceIndex, CaseWindow, RequestRef, flagged_cases  # noqa: E402
+ from rules import load_rules, decide, OPERATION_ORDER, OP_STATE  # noqa: E402
+ from identity import IdentityResolver  # noqa: E402
+ from classifier import RequestClassifier  # noqa: E402
+@@ -115,9 +115,14 @@
          self.identity = {}                                 # case_id -> Identity|None
          self.direct = {}                                   # case_id -> {rid: [reasons]}
          for c, r in self.requests.items():
@@ -8,34 +17,16 @@
 -            self.identity[c] = ident
 -            self.direct[c] = {k: list(v) for k, v in self.idx.direct_links(ident).items()} if ident else {}
 +            self.identity[c] = self.resolver.resolve(r["email"])
-+        prev, has_next = self._request_windows()
-+        for c, r in self.requests.items():
-+            ident = self.identity[c]
-+            self.direct[c] = ({k: list(v) for k, v in self.idx.direct_links(
-+                ident, prev.get(c), r["audit_at"], c in has_next).items()} if ident else {})
++        # Per-person evidence windows (state.request_windows): requests are
++        # grouped by resolved user_id across samples + evaluation, and each
++        # linked resource goes to the one request whose window holds its
++        # first linking evidence.
++        self.direct = self.idx.link_requests(
++            [RequestRef(c, self.identity[c], r["audit_at"], r["requested_at"])
++             for c, r in self.requests.items()])
  
          self.workflow = self._assign_workflow()            # case_id -> {rid: reason}
  
-     # -- setup -------------------------------------------------------------
-+    def _request_windows(self):
-+        """Per person, the previous request's audit_at and whether a later
-+        request exists (see NOTES.md: evidence belongs to one request)."""
-+        from models import parse_ts
-+        by_user = {}
-+        for c, r in self.requests.items():
-+            if self.identity[c] is not None:
-+                by_user.setdefault(self.identity[c].user_id, []).append(c)
-+        prev, has_next = {}, set()
-+        for cs in by_user.values():
-+            cs.sort(key=lambda c: parse_ts(self.requests[c]["audit_at"]))
-+            for a, b in zip(cs, cs[1:]):
-+                prev[b] = self.requests[a]["audit_at"]
-+                has_next.add(a)
-+        return prev, has_next
-+
-     def _load_requests(self) -> dict:
-         rows = {}
-         for name in ("sample_deletion_requests.csv", "deletion_requests.csv"):
 --- a/code/evaluation/main.py
 +++ b/code/evaluation/main.py
 @@ -180,8 +180,8 @@
