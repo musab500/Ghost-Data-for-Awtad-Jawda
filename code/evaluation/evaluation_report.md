@@ -21,9 +21,9 @@ Deterministic core, model used only where it adds value:
 | Output + structural validation | `main.py` | no |
 | Multimodal (PDF/PNG → Observations) | `multimodal.py` (Person A) | pending; hook degrades |
 
-The final full-dataset run that produced `output.csv` used the **deterministic
-fallback classifier** (no API key was present), so it made **zero model calls**.
-See `usage_report.md`.
+The latest full-dataset run used the **deterministic fallback classifier** (no
+API key was present in this environment), so it made **zero model calls**. See
+`usage_report.md`, which is generated from recorded usage.
 
 ## 2. Case-level status accuracy (32 samples)
 
@@ -95,8 +95,8 @@ rather than any mention of a "copy". See §7.
 
 ## 6. Team-authored evaluation cases
 
-Three cases under `code/evaluation/custom_cases/`, each isolating logic the 32
-samples cannot cleanly exercise. All currently **PASS (3/3)**.
+Four cases under `code/evaluation/custom_cases/`, each isolating logic the 32
+samples cannot cleanly exercise. All currently **PASS (4/4)**.
 
 1. **`temporal_cutoff`** — A profile FOUND in a snapshot before `audit_at` and
    deleted (NOT_FOUND) in a snapshot after it. At the cutoff the answer must be
@@ -112,7 +112,17 @@ samples cannot cleanly exercise. All currently **PASS (3/3)**.
    retention must flip to DELETE (a finding); an ACTIVE data flow must become
    REPORT_ACTIVE_DATA_FLOW → DISABLE_DATA_FLOW → VERIFY_DATA_FLOW_DISABLED.
 
+4. **`validator_complete_rule`** (regression) — a `COMPLETE` row with no steps
+   must make strict validation raise ("no VERIFICATION step") and must be
+   reported as exactly one warning in non-strict mode.
+
 ## 7. Failures found and improvements made
+
+- **Empty `COMPLETE` rows (case_45, case_61, case_63).** The pipeline emitted
+  `COMPLETE` with `[]` where evidence exists only in images/PDFs not yet loaded
+  (`multimodal.py`, Person A). The validator now rejects a `COMPLETE` row without
+  a `VERIFICATION` step or with an uncited step. It is strict once multimodal
+  observations are loaded and prints these cases as warnings until then.
 
 - **Classifier false positive on case_05.** The phrase list matched "copy of
   my profile" inside a deletion request. Fix: replaced the broad `"copy of my"`
@@ -149,3 +159,15 @@ samples cannot cleanly exercise. All currently **PASS (3/3)**.
 - Near-simultaneous, identifier-less records (the case_03/27/28 family) remain
   ambiguous by construction; status is still correct, only the cited resource id
   can differ.
+
+## 10. Classifier: LLM vs fallback
+
+<!-- CLASSIFIER_EVAL_START -->
+**Not yet run.** The comparison needs an `ANTHROPIC_API_KEY`, which was not
+available in the environment that produced these numbers. Running
+`python3 code/evaluation/classifier_eval.py` with a key replaces this block with
+the measured LLM-only, fallback-only and combined results, agreement with the 10
+`CLASSIFY_REQUEST` flags, and every text where the LLM and the fallback disagree.
+The only classifier result measured so far is the fallback: 10/10 agreement with
+the flags and 0 false positives on the 32 samples (section 5).
+<!-- CLASSIFIER_EVAL_END -->

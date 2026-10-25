@@ -1,0 +1,10 @@
+{
+  "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+  "retrieved": "2026-10-25",
+  "unit": "USD per million tokens (MTok), base input and output; prompts up to 100,000 tokens",
+  "models": {
+    "claude-haiku-5-5":  {"input": 0.10, "output": 0.50},
+    "claude-sonnet-5-5": {"input": 2.00, "output": 10.00},
+    "claude-opus-5-5":   {"input": 4.00, "output": 20.00}
+  }
+}

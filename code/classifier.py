@@ -29,13 +29,32 @@ import hashlib
 import json
 import os
 import re
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 PROMPT_VERSION = "v1"
 DEFAULT_MODEL = os.environ.get("GHOST_CLASSIFIER_MODEL", "claude-haiku-5-5")
 _CACHE_DIR = Path(__file__).resolve().parent / ".cache"
-_CACHE_PATH = _CACHE_DIR / "classifier.json"
+_CACHE_PATH = _CACHE_DIR / "classifier.json"            # raw LLM verdicts, keyed by hash
+USAGE_PATH = _CACHE_DIR / "classifier_usage.json"       # one record per real API call
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_dotenv(path: Path | None = None) -> bool:
+    """Load KEY=VALUE lines from a gitignored .env into os.environ (existing
+    variables win). Values are never printed or logged. Returns True if loaded."""
+    path = path or (_REPO_ROOT / ".env")
+    if not path.is_file():
+        return False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    return True
 
 SYSTEM_PROMPT = (
     "You classify customer privacy requests. Decide whether the message is a "
@@ -154,7 +173,10 @@ def fallback_classify(text: str) -> ClassifierResult:
 
 class RequestClassifier:
     def __init__(self, model: str = DEFAULT_MODEL, use_llm: bool | None = None):
+        load_dotenv()
         self.model = model
+        self.llm_errors: list[str] = []
+        self.cache_hits = 0
         self._cache = self._load_cache()
         self._api_key = (os.environ.get("ANTHROPIC_API_KEY")
                          or os.environ.get("CLAUDE_API_KEY") or "")
@@ -191,56 +213,69 @@ class RequestClassifier:
         return h.hexdigest()
 
     # -- llm ---------------------------------------------------------------
-    def _llm_classify(self, text: str) -> ClassifierResult | None:
+    def _record_usage(self, rec: dict) -> None:
+        try:
+            _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            data = json.loads(USAGE_PATH.read_text(encoding="utf-8")) if USAGE_PATH.exists() else []
+            data.append(rec)
+            USAGE_PATH.write_text(json.dumps(data, indent=0), encoding="utf-8")
+        except Exception as e:  # usage is a deliverable: do not lose it silently
+            print(f"WARNING: could not record classifier usage: {e}", file=sys.stderr)
+
+    def llm_verdict(self, text: str) -> ClassifierResult | None:
+        """Raw LLM verdict (no override), cached by sha256(text+model+prompt).
+        Returns None when no key is configured or the call fails (error recorded
+        in ``self.llm_errors`` and printed to stderr; the key is never included)."""
+        key = self._key(text)
+        c = self._cache.get(key)
+        if c is not None:
+            self.cache_hits += 1
+            return ClassifierResult(c["is_deletion"], c["confidence"], c["reason"], "llm")
+        if not self.use_llm:
+            return None
         try:
             if self._client is None:
                 import anthropic  # lazy; only when a key is present
                 self._client = anthropic.Anthropic(api_key=self._api_key)
             msg = self._client.messages.create(
-                model=self.model,
-                max_tokens=200,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": text}],
-            )
-            self.calls += 1
+                model=self.model, max_tokens=200, system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": text}])
             u = getattr(msg, "usage", None)
-            if u is not None:
-                self.input_tokens += getattr(u, "input_tokens", 0) or 0
-                self.output_tokens += getattr(u, "output_tokens", 0) or 0
+            rec = {"model": getattr(msg, "model", None) or self.model,
+                   "input_tokens": getattr(u, "input_tokens", 0) or 0,
+                   "output_tokens": getattr(u, "output_tokens", 0) or 0,
+                   "text_sha256": hashlib.sha256(_norm(text).encode()).hexdigest(),
+                   "prompt_version": PROMPT_VERSION, "ts": int(time.time())}
+            self.calls += 1
+            self.input_tokens += rec["input_tokens"]
+            self.output_tokens += rec["output_tokens"]
+            self._record_usage(rec)
             raw = "".join(getattr(b, "text", "") for b in msg.content)
             data = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
-            return ClassifierResult(bool(data["is_deletion"]),
-                                    float(data.get("confidence", 0.5)),
-                                    str(data.get("reason", "")), "llm")
-        except Exception:
+            res = ClassifierResult(bool(data["is_deletion"]), float(data.get("confidence", 0.5)),
+                                   str(data.get("reason", "")), "llm")
+        except Exception as e:
+            msg_ = f"{type(e).__name__}: {str(e)[:200]}"
+            self.llm_errors.append(msg_)
+            print(f"WARNING: LLM classification failed, using fallback ({msg_})", file=sys.stderr)
             return None
+        self._cache[key] = {"is_deletion": res.is_deletion, "confidence": res.confidence,
+                            "reason": res.reason}
+        self._save_cache()
+        return res
 
     # -- public ------------------------------------------------------------
     def classify(self, text: str) -> ClassifierResult:
-        key = self._key(text)
-        if key in self._cache:
-            c = self._cache[key]
-            return ClassifierResult(c["is_deletion"], c["confidence"], c["reason"], c["source"])
-
-        result = None
-        if self.use_llm:
-            result = self._llm_classify(text)
-            if result is not None:
-                # Safety override: an explicit non-deletion statement wins.
-                neg = _hard_negation(text)
-                if neg and result.is_deletion:
-                    result = ClassifierResult(False, max(result.confidence, 0.95),
-                                              f"override, explicit non-deletion: '{neg}'",
-                                              "llm+override")
-        if result is None:
-            result = fallback_classify(text)
-
-        self._cache[key] = {
-            "is_deletion": result.is_deletion, "confidence": result.confidence,
-            "reason": result.reason, "source": result.source,
-        }
-        self._save_cache()
-        return result
+        """Combined decision: LLM verdict when available, with the explicit
+        negation override on top; deterministic fallback otherwise."""
+        result = self.llm_verdict(text)
+        if result is not None:
+            neg = _hard_negation(text)
+            if neg and result.is_deletion:
+                return ClassifierResult(False, max(result.confidence, 0.95),
+                                        f"override, explicit non-deletion: '{neg}'", "llm+override")
+            return result
+        return fallback_classify(text)
 
     def is_deletion(self, text: str) -> bool:
         return self.classify(text).is_deletion

@@ -1,85 +1,36 @@
 # Token Usage and Cost Report — Ghost Data Still Exists
 
-Summarizes the **final full-dataset run that produced `output.csv`** (518 cases).
+Summarizes the final full-dataset run that produced `output.csv` (518 requests). All figures are read from recorded API responses; nothing here is estimated.
 
-## 1. Final run: model usage
+## 1. How the final run used models
 
-| Provider | Model | Calls | Input tokens | Output tokens | Cost (USD) |
-|---|---|---|---|---|---|
-| — (none) | — | **0** | **0** | **0** | **$0.00** |
+- Classifier mode in the final run: **fallback** (`claude-haiku-5-5`).
+- New classifier API calls in that run: 0; served from the on-disk cache: 0; failures: 0.
+- Multimodal observations loaded: 0.
+- Every other stage (identity, parsing, state, policy, steps, validation) is deterministic and makes no model call.
+- Cached calls were paid for once, when the cache was populated; their recorded usage is reported below.
 
-**The final run made no model calls.** No API key was present in the
-environment (`ANTHROPIC_API_KEY` unset), so the request classifier used its
-deterministic negation/intent fallback, and every other stage of the pipeline —
-identity resolution, evidence parsing, state reconstruction, policy evaluation,
-workflow assignment, step assembly, validation — is deterministic by design and
-never calls a model.
+## 2. Usage and cost per model
 
-| Metric | Value |
-|---|---|
-| Requests processed | 518 |
-| Model calls | 0 |
-| Total tokens | 0 |
-| Avg tokens / request | 0 |
-| Total cost | $0.00 |
-| Avg cost / request | $0.00 |
-| Wall-clock (full run) | ~1.2 s |
+No model calls were recorded. Overall: 0 calls, 0 tokens, $0.00.
 
-This is reported honestly: the solution is primarily deterministic, and in this
-environment it reached its documented accuracy with no model spend.
+## 3. Per-request averages (÷ 518 requests)
 
-## 2. Classifier LLM path (available, not used this run)
+- Total tokens per request: 0.00
+- Input tokens per request: 0.00; output tokens per request: 0.00
+- Cost per request: $0.00000000
 
-`classifier.py` has an optional LLM path that activates **only** when an API key
-is present (`ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`), read from the environment
-only and never logged or cached. When enabled:
+## 4. Prices used
 
-- **Model:** `claude-haiku-5-5` by default (overridable via
-  `GHOST_CLASSIFIER_MODEL`), chosen as a low-cost model for a short
-  classification task.
-- **One call per unique request text.** Results are cached by
-  `sha256(request_text + model + prompt_version)` in `code/.cache/`, so repeated
-  texts and re-runs cost nothing.
-- **Deduplication:** the 518 requests contain **375 unique request texts**, so a
-  cold full run would make at most **375** calls (not 518); a warm run makes 0.
-- The classifier accumulates real `input_tokens` / `output_tokens` from each
-  API response (`RequestClassifier.calls/input_tokens/output_tokens`). On a run
-  with a key, those counters hold the authoritative totals to paste here.
+Source: https://platform.claude.com/docs/en/about-claude/pricing; retrieved 2026-10-25; USD per million tokens (MTok), base input and output; prompts up to 100,000 tokens.
 
-### Projection (estimate only — not an actual billed run)
+- `claude-haiku-5-5`: $0.1 input / $0.5 output per MTok
+- `claude-sonnet-5-5`: $2.0 input / $10.0 output per MTok
+- `claude-opus-5-5`: $4.0 input / $20.0 output per MTok
 
-Rough sizing for the classification prompt: system prompt ≈ 130 tokens, request
-text ≈ 40 tokens input, JSON verdict ≈ 30 tokens output. For a cold run of 375
-unique texts:
+## 5. Notes
 
-| Model | Calls | Est. input tok | Est. output tok | Est. cost* |
-|---|---|---|---|---|
-| claude-haiku-5-5 | 375 | ≈ 64,000 | ≈ 11,000 | **≈ $0.06–0.10** |
+- Request classifier: no usage file found, so **0 recorded calls**.
+- Multimodal (images/PDFs): no usage file found, so **0 recorded calls**.
 
-\* Order-of-magnitude estimate from public Haiku-class pricing; replace with the
-classifier's recorded counters after a real keyed run. These are **projections,
-not measured usage**, and are labelled as such so nothing in this report is
-fabricated.
-
-## 3. Multimodal (Person A, pending)
-
-`multimodal.py` (PDF/PNG → Observations) is owned by Person A and was not present
-for this run, so it contributed **0 observations and 0 tokens**. PDFs are
-extracted with `pdftotext` (no model), and the 11 PNGs are intended to be read
-once by a vision model with results cached to JSON; Person A will supply that
-module together with a usage JSON carrying its real token counts, to be merged
-into §1 here for the final submission.
-
-## 4. Reproduction
-
-```bash
-# Deterministic run (what produced the submitted output.csv): 0 model calls
-python3 code/main.py
-
-# With the LLM classifier enabled (records real token counts):
-export ANTHROPIC_API_KEY=...        # read from env only; never commit
-python3 code/main.py
-```
-
-No API keys, credentials, or sensitive configuration are included in this
-report or anywhere in the submission.
+No API keys or credentials appear in this report.
