@@ -230,10 +230,11 @@ def multimodal_observations(files: list[EvidenceFile],
                       f"waiting {wait:.0f}s before retrying", file=log)
                 _sleep(wait)
                 entry = _call_vision(ev, backend, cache_dir, fresh, log)
-            if entry is None and fresh and fresh[-1].get("error_kind") == "rate_limit":
-                rate_limited = True      # a quota error persisted: do not spend more calls on it
-                print(f"multimodal: STOP: rate limit persisted for {ev.file_id} ({_quota_kind(_LAST_ERROR[0])}); "
-                      "no further live calls in this run", file=log)
+            if entry is None and fresh:
+                rate_limited = True      # any failed live call stops the run: no more calls on a failing setup
+                print(f"multimodal: STOP: live call failed for {ev.file_id} [{fresh[-1].get('error_kind')}]"
+                      + (f" ({_quota_kind(_LAST_ERROR[0])})" if fresh[-1].get("error_kind") == "rate_limit" else "")
+                      + "; no further live calls in this run", file=log)
         if entry is None and allow_manual:
             entry = _manual_entry(ev, manual_dir)
             if entry is not None:

@@ -1,0 +1,90 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.5-flash-lite",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.5-flash-lite"
+  },
+  "file_id": "evidence_04",
+  "file_path": "evidence/images/account_admin_console_20260926.png",
+  "file_sha256": "d5c32ca5b6e1a2b4bbe9f5d41835ef1fd5d4f7061dab9067a4f9f88cea3c1861",
+  "records": [
+    {
+      "category": "USER_PROFILE",
+      "identifiers": [
+        "haruka.s1838@zoho.com",
+        "+81 90 7610 2507",
+        "user_11"
+      ],
+      "keys": [
+        "user_11"
+      ],
+      "notes": "Haruka Sato profile details shown with email, phone, and user ID.",
+      "observed_at": "",
+      "resource_id": "account_5762",
+      "state": "IDENTIFIABLE",
+      "system_id": "account_service"
+    },
+    {
+      "category": "USER_PROFILE",
+      "identifiers": [],
+      "keys": [
+        "ORD-20265762"
+      ],
+      "notes": "Order ORD-20265762 for Ceramic coffee set.",
+      "observed_at": "",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": ""
+    },
+    {
+      "category": "USER_PROFILE",
+      "identifiers": [],
+      "keys": [
+        "ORD-20265518"
+      ],
+      "notes": "Order ORD-20265518 for Travel backpack.",
+      "observed_at": "",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": ""
+    },
+    {
+      "category": "SUPPORT_MESSAGE",
+      "identifiers": [],
+      "keys": [
+        "CS-8538",
+        "support_9538"
+      ],
+      "notes": "Support ticket CS-8538 associated with the customer.",
+      "observed_at": "",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "support_platform"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:45:55Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1950,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.5-flash-lite",
+        "ok": true,
+        "output_tokens": 467,
+        "provider": "gemini",
+        "requested_model": "gemini-3.5-flash-lite",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1950,
+    "model": "gemini-3.5-flash-lite",
+    "output_tokens": 467,
+    "provider": "gemini",
+    "requested_model": "gemini-3.5-flash-lite",
+    "usage_reported": true
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.5-flash-lite",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.5-flash-lite"
+  },
+  "file_id": "evidence_37",
+  "file_path": "evidence/images/security_audit_explorer_20260905.png",
+  "file_sha256": "ca59f693f4e7002466b3fdeaf1bb6763618770963dd811b60003772d07b4b03b",
+  "records": [
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [
+        "user_03"
+      ],
+      "notes": "Account closure recorded for user_03.",
+      "observed_at": "2026-08-25T04:03:00Z",
+      "resource_id": "audit_record_003",
+      "state": "FOUND",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [
+        "user_03"
+      ],
+      "notes": "Session revoked for user_03.",
+      "observed_at": "",
+      "resource_id": "audit_record_002",
+      "state": "FOUND",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [
+        "user_03"
+      ],
+      "notes": "Recovery challenge completed for user_03.",
+      "observed_at": "",
+      "resource_id": "audit_record_001",
+      "state": "FOUND",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [
+        "user_03"
+      ],
+      "notes": "Email change confirmed for user_03.",
+      "observed_at": "",
+      "resource_id": "audit_record_006",
+      "state": "FOUND",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [
+        "user_03"
+      ],
+      "notes": "Login from new device for user_03.",
+      "observed_at": "",
+      "resource_id": "audit_record_005",
+      "state": "FOUND",
+      "system_id": "security_service"
+    },
+    {
+      "category": "SECURITY_AUDIT_LOG",
+      "identifiers": [
+        "user_03"
+      ],
+      "keys": [
+        "user_03"
+      ],
+      "notes": "Password changed for user_03.",
+      "observed_at": "",
+      "resource_id": "audit_record_004",
+      "state": "FOUND",
+      "system_id": "security_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:47:43Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1962,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.5-flash-lite",
+        "ok": true,
+        "output_tokens": 704,
+        "provider": "gemini",
+        "requested_model": "gemini-3.5-flash-lite",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1962,
+    "model": "gemini-3.5-flash-lite",
+    "output_tokens": 704,
+    "provider": "gemini",
+    "requested_model": "gemini-3.5-flash-lite",
+    "usage_reported": true
+  }
+}

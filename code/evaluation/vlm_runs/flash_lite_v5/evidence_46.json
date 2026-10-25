@@ -1,0 +1,133 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.5-flash-lite",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.5-flash-lite"
+  },
+  "file_id": "evidence_46",
+  "file_path": "evidence/images/object_storage_browser_20260213.png",
+  "file_sha256": "96e9a191380c29b9e0ab997007268c4cd6353cb6721ebd1ed4a32599d8d37e04",
+  "records": [
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "delivery_confirmation_19.pdf"
+      ],
+      "notes": "Support attachment delivery_confirmation_19.pdf stored in northstar-customer-data.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "delivery_confirmation_20.pdf"
+      ],
+      "notes": "Support attachment delivery_confirmation_20.pdf stored in northstar-customer-data.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "return_label_4821.pdf"
+      ],
+      "notes": "Support attachment return_label_4821.pdf stored in northstar-customer-data.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "return_label_4876.pdf"
+      ],
+      "notes": "Support attachment return_label_4876.pdf stored in northstar-customer-data.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "invoice_NS-10493.pdf"
+      ],
+      "notes": "Support attachment invoice_NS-10493.pdf stored in northstar-customer-data.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "SUPPORT_ATTACHMENT",
+      "identifiers": [],
+      "keys": [
+        "parcel_damage_7713.jpg"
+      ],
+      "notes": "Support attachment parcel_damage_7713.jpg stored in northstar-customer-data.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [],
+      "keys": [
+        "customer_export_2026-02-10.zip"
+      ],
+      "notes": "User export archive customer_export_2026-02-10.zip stored in northstar-customer-data.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    },
+    {
+      "category": "USER_EXPORT",
+      "identifiers": [],
+      "keys": [
+        "customer_export_2026-02-12.zip"
+      ],
+      "notes": "User export archive customer_export_2026-02-12.zip stored in northstar-customer-data.",
+      "observed_at": "2026-02-13T08:00:00Z",
+      "resource_id": "",
+      "state": "FOUND",
+      "system_id": "object_storage"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:48:15Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1936,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.5-flash-lite",
+        "ok": true,
+        "output_tokens": 1070,
+        "provider": "gemini",
+        "requested_model": "gemini-3.5-flash-lite",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1936,
+    "model": "gemini-3.5-flash-lite",
+    "output_tokens": 1070,
+    "provider": "gemini",
+    "requested_model": "gemini-3.5-flash-lite",
+    "usage_reported": true
+  }
+}

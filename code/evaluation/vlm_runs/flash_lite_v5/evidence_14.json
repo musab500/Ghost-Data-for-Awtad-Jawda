@@ -1,0 +1,67 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.5-flash-lite",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.5-flash-lite"
+  },
+  "file_id": "evidence_14",
+  "file_path": "evidence/images/connector_management_console_20260807.png",
+  "file_sha256": "e81fabc93ea1b5f4c918d934cdb2bea05d61737adfcc29f281494f5d8ec46355",
+  "records": [
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [
+        "jain.aditi@gmail.com"
+      ],
+      "keys": [
+        "customer_analytics_warehouse",
+        "jain.aditi@gmail.com"
+      ],
+      "notes": "Data flow 1121 is currently healthy and active.",
+      "observed_at": "2026-08-07T08:00:00Z",
+      "resource_id": "data_flow_1121",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    },
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [
+        "lucia-torres@gmail.com"
+      ],
+      "keys": [
+        "customer_analytics_warehouse",
+        "lucia-torres@gmail.com"
+      ],
+      "notes": "Data flow 9846 streams continuously to the warehouse.",
+      "observed_at": "2026-08-07T08:00:00Z",
+      "resource_id": "data_flow_9846",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:46:26Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1936,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.5-flash-lite",
+        "ok": true,
+        "output_tokens": 321,
+        "provider": "gemini",
+        "requested_model": "gemini-3.5-flash-lite",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1936,
+    "model": "gemini-3.5-flash-lite",
+    "output_tokens": 321,
+    "provider": "gemini",
+    "requested_model": "gemini-3.5-flash-lite",
+    "usage_reported": true
+  }
+}

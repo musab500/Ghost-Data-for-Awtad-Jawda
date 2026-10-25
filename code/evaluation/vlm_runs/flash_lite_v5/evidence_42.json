@@ -1,0 +1,85 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.5-flash-lite",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.5-flash-lite"
+  },
+  "file_id": "evidence_42",
+  "file_path": "evidence/images/deleted_account_reference_20260310.png",
+  "file_sha256": "68c28a72afd6ed184d5990d15c543f8a516face204f0360f732755a8a63c28be",
+  "records": [
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [],
+      "keys": [
+        "user_17"
+      ],
+      "notes": "Order record linked to customer user_17.",
+      "observed_at": "11 Jan 2024 08:45",
+      "resource_id": "ORD-20263245",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    },
+    {
+      "category": "SUPPORT_MESSAGE",
+      "identifiers": [],
+      "keys": [
+        "user_17"
+      ],
+      "notes": "Support message record linked to customer user_17.",
+      "observed_at": "14 Feb 2024 12:16",
+      "resource_id": "CS-3245",
+      "state": "ACTIVE",
+      "system_id": "support_platform"
+    },
+    {
+      "category": "SUPPORT_MESSAGE",
+      "identifiers": [],
+      "keys": [
+        "user_17"
+      ],
+      "notes": "Support message record linked to customer user_17.",
+      "observed_at": "03 Jun 2024 09:27",
+      "resource_id": "CS-3378",
+      "state": "ACTIVE",
+      "system_id": "support_platform"
+    },
+    {
+      "category": "DATA_FLOW",
+      "identifiers": [],
+      "keys": [
+        "user_17"
+      ],
+      "notes": "Finance record linked to customer user_17.",
+      "observed_at": "22 Aug 2024 15:03",
+      "resource_id": "FIN-7742",
+      "state": "ACTIVE",
+      "system_id": "integration_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:47:58Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1962,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.5-flash-lite",
+        "ok": true,
+        "output_tokens": 470,
+        "provider": "gemini",
+        "requested_model": "gemini-3.5-flash-lite",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1962,
+    "model": "gemini-3.5-flash-lite",
+    "output_tokens": 470,
+    "provider": "gemini",
+    "requested_model": "gemini-3.5-flash-lite",
+    "usage_reported": true
+  }
+}

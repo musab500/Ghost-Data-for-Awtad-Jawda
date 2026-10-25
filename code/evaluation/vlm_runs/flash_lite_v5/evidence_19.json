@@ -1,0 +1,53 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.5-flash-lite",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.5-flash-lite"
+  },
+  "file_id": "evidence_19",
+  "file_path": "evidence/images/analytics_profile_view_20260713.png",
+  "file_sha256": "4e4cb259bc2010b622b0c53fe5872258f994fefc23452a83bb27473758693484",
+  "records": [
+    {
+      "category": "ANALYTICS_PROFILE",
+      "identifiers": [
+        "user_20",
+        "darwish.omar@icloud.com"
+      ],
+      "keys": [
+        "user_20",
+        "darwish.omar@icloud.com"
+      ],
+      "notes": "Analytics profile for Omar Darwish containing user ID and email address.",
+      "observed_at": "",
+      "resource_id": "analytics_7438",
+      "state": "IDENTIFIABLE",
+      "system_id": "analytics_platform"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:46:41Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1936,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.5-flash-lite",
+        "ok": true,
+        "output_tokens": 155,
+        "provider": "gemini",
+        "requested_model": "gemini-3.5-flash-lite",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1936,
+    "model": "gemini-3.5-flash-lite",
+    "output_tokens": 155,
+    "provider": "gemini",
+    "requested_model": "gemini-3.5-flash-lite",
+    "usage_reported": true
+  }
+}

@@ -750,3 +750,24 @@ branch=person-a
 repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
+
+## [2026-10-25T08:00:00Z] Flash-lite v5 run on 11 screenshots: reviewed, not accepted
+
+User Prompt (verbatim, secrets redacted):
+Quota for gemini-3.5-flash-lite is available (diagnostic call succeeded). Run now: 1) one pass of all 11 files with VISION_MODEL=gemini-3.5-flash-lite, prompt v5, thinking skipped, 13s pause; stop at the first failure or 429 and report the exact message; no retry loops. 2) Review every VLM-vs-manual difference against the images; accept only if verified, else keep manual and document in NOTES.md (data flows ACTIVE, tombstone_17 REDACTED, support_9538 with evidence_04). 3) If good: freeze, then final_run.py --require-llm; do not commit output.csv before it passes. 4) If not good enough: do not freeze; wait for gemini-3.6-flash quota; keep both models' comparison files and all usage in the ledger.
+
+Agent Response Summary:
+Made any failed live call stop the run, then ran the single pass: 11 of 11 files succeeded (21,454 in / 5,139 out tokens, no retries, no 0-record file). Reviewed all differences against the images: data flows now ACTIVE and support_9538 is listed, but 6 of 11 files are not acceptable (resource id invented in evidence_60, wrong structure in evidence_42, displayed identifiers dropped in 09 and 23, wrong category in 28, unverified extra record in 32). Not good enough, so nothing was frozen and final_run was not run; results moved out of the live cache, preserved under code/evaluation/vlm_runs/flash_lite_v5/, NOTES.md updated.
+
+Actions:
+* edited code/multimodal.py (stop at first failed live call), code/parsers/NOTES.md, code/multimodal_usage_prior_runs.json
+* VISION_MODEL=gemini-3.5-flash-lite python3 tools/compare_multimodal.py --run (no --freeze); offline pipeline diff; image review
+* output.csv untouched and identical to the manual-fallback pipeline output
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none

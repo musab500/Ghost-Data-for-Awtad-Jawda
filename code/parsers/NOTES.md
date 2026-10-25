@@ -196,21 +196,57 @@ its `expected_output.csv`. The format is described in that folder's README.
 
 ### Real vision run of the screenshots: status and procedure
 
-**Status: NOT YET RUN.** The sessions that built this had no Gemini key (no
-`.env`, nothing in the environment; `tools/check_env.py` says "provider: none"),
-so there is **no vision-model result, no comparison table and no conclusions yet,
-and none are claimed here**. The 11 screenshots are currently covered only by the
-hand transcriptions in `code/multimodal_manual/` (made by Claude in the dev session
-from the images; not API calls, no usage).
+**Status: real runs done; no VLM result is accepted yet; the manual transcriptions
+remain the committed fallback.** All runs used Gemini through `llm_provider` on the
+free tier (no paid billing). Nothing is frozen in `code/multimodal_vlm/`.
 
-What *has* been verified without a key: the whole path with a **fake provider**
-(`VisionViaBackend` in `code/tests/test_multimodal.py`: call contract, cache key,
-ledger, failures, lookup order) and through Person B's real `llm_provider` module
-with a fake provider installed (`_ProviderLayer`); Person B's `usage_report.py`
-reads the ledger correctly; the `google-genai` SDK accepts the config and schema
-client-side. **Not verified:** that Gemini accepts the schema/prompt, that
-`gemini-3.6-flash` (the unconfirmed default; use `check_env.py --list`) exists, and the quality of its
-transcriptions. Run `python3 tools/check_env.py --ping` first.
+| Run | Model | Prompt | Outcome | Tokens (in / out) |
+|---|---|---|---|---|
+| 1 | gemini-3.6-flash | v2 | 10 of 11 files (evidence_28: 503 x3) | 15,884 / 28,086 |
+| 2 | gemini-3.6-flash | v3 | 4 of 11 (7 files: 429, no tokens) | in ledger |
+| 3 | gemini-3.6-flash | v4, thinking off | 11 of 11 (made unintentionally by a unit test that used the real provider; the test is now hermetic) | in ledger |
+| 4 | gemini-3.5-flash-lite | v4 | 11 x HTTP 400: this model rejects a thinking budget; fixed (model-dependent thinking setting) after one diagnostic call | 0 |
+| 5 | gemini-3.5-flash-lite | v5, thinking skipped | 11 of 11, no truncation, no retries, no 0-record file | 21,454 / 5,139 |
+
+Every call of every run is in the usage ledger (`code/multimodal_usage_prior_runs.json`,
+merged into `code/.cache/multimodal_usage.json` by `multimodal.py`; 55 calls,
+66,639 input / 46,896 output tokens). Comparison files: `code/evaluation/multimodal_comparison_run1.md`,
+`..._run2_partial.md`, `..._gemini_3_6_flash_v4.md`, `..._flash_lite_v5.md`; raw run-5 JSON in
+`code/evaluation/vlm_runs/flash_lite_v5/`.
+
+**What changed in the prompt and why (generic wording only, nothing taken from sample outputs).**
+v2 -> v3: per-category state guidance and "do not copy an identifier onto a record that does not display
+it" (run 1 attributed a customer's email to the support case and labelled a backup IDENTIFIABLE, which
+`rules.decide` cannot act on). v3 -> v4: `system_id` must be a catalog service id (v3 let the model return
+the product name "Sentinel"); non-catalog values fall back to the category's system; the category follows
+the resource-id prefix (run 1 called `tombstone_17` a USER_PROFILE). v4 -> v5: data flows and backups take
+only ACTIVE/DISABLED/BLOCKED (v4 labelled two running data flows IDENTIFIABLE because a selector shows an
+email, which flipped case_39 to a wrong COMPLETE), a retained reference with no direct identifier is REDACTED
+(v4 returned FOUND, which produced a false REPORT_EXPOSED_PII in case_46), and every record the page links to
+is listed (v4 dropped `support_9538`).
+
+**Run 5 judged against the images** (offline pipeline diff with `LLM_PROVIDER=none`: manual-only output vs
+output with the run-5 results: 2 of 518 rows change, case_46 and case_63, both wrongly):
+
+| File | Verdict | Reason (checked in the image) |
+|---|---|---|
+| evidence_14 | VLM right | `data_flow_1121`/`data_flow_9846`: Mode "Continuous", Healthy, events/hour -> ACTIVE (v4 said IDENTIFIABLE; fixed by v5). Pipeline-identical |
+| evidence_04 | VLM acceptable | `account_5762` shows name, email, phone -> IDENTIFIABLE is correct by the definition; `support_9538` is now listed (field "Support: CS-8538 - support_9538"); manual's `user_11` on the support record is not shown on that row |
+| evidence_19, 37, 46 | VLM acceptable | same records, states and identifiers; `observed_at` empty or the screen's header time instead of the per-row time (no effect: falls back to the capture time) |
+| evidence_09 | **manual right** | VLM dropped `customer_reference user_13` of `search_428`, which the table displays |
+| evidence_23 | **manual right** | VLM dropped the Owner e-mail of `export_1258/1259/1261`, displayed in the Owner column |
+| evidence_28 | **manual right** | `support_1034` is a helpline ticket; VLM category USER_PROFILE (id prefix `support_` is not in `category_for_resource`) |
+| evidence_32 | **manual right** | VLM adds `backup_9281`, which only appears in the activity feed ("restored - Completed"); its ACTIVE state is not shown |
+| evidence_42 | **manual right** | page is the retained reference `user_17`; the VLM listed the four linked records (order, 2 support, finance), mapped them through the customer key to `tombstone_17` with state ACTIVE and never listed the page's own subject: case_46 loses `VERIFY_RECORD_REDACTED` |
+| evidence_60 | **manual right** | page shows `marketing_001`; VLM returned resource_id `marketing_1` (invented normalisation): case_63 INCOMPLETE -> wrong COMPLETE |
+
+Conclusion: 5 of 11 files are acceptable, 6 are not (one has a wrong resource id, one a wrong structure, three
+drop displayed identifiers, one a wrong category / extra record). That is not good enough to freeze, so nothing
+is frozen and the pipeline uses the manual transcriptions. Planned next step (needs `gemini-3.6-flash` quota):
+one run of all 11 files with that model, same prompt, then the same image-by-image review.
+Pipeline rows that would change with the run-5 results: **case_63** (wrong: loses `marketing_001` finding /
+remediation / verification) and **case_46** (loses `VERIFY_RECORD_REDACTED` on `tombstone_17`); neither
+change is accepted, so `output.csv` is unchanged.
 
 **To run it** (whoever has the key, in a checkout with `.env`; `pip install -r requirements.txt`):
 

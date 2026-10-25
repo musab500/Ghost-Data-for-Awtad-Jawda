@@ -1,0 +1,71 @@
+{
+  "extractor": {
+    "method": "vlm",
+    "model": "gemini-3.5-flash-lite",
+    "prompt_version": "v5",
+    "provider": "gemini",
+    "served_model": "gemini-3.5-flash-lite"
+  },
+  "file_id": "evidence_09",
+  "file_path": "evidence/images/search_index_inspector_20260901.png",
+  "file_sha256": "75afdb0ae53a4510c83399a70d88073cb4fb2747454095756e4ddad1a8c70605",
+  "records": [
+    {
+      "category": "SEARCH_INDEX_ENTRY",
+      "identifiers": [
+        "g.silva76@gmail.com"
+      ],
+      "keys": [
+        "Gabriel Silva",
+        "g.silva76@gmail.com",
+        "user_13",
+        "9.84",
+        "05:58:21 UTC"
+      ],
+      "notes": "Search index entry with identifiable user details.",
+      "observed_at": "2026-09-01T06:00:14Z",
+      "resource_id": "search_428",
+      "state": "IDENTIFIABLE",
+      "system_id": "search_service"
+    },
+    {
+      "category": "SEARCH_INDEX_ENTRY",
+      "identifiers": [
+        "g.silva76.jr@gmail.com"
+      ],
+      "keys": [
+        "g.silva76.jr@gmail.com",
+        "4.12",
+        "05:55:03 UTC"
+      ],
+      "notes": "Search index entry displaying an email identifier.",
+      "observed_at": "2026-09-01T06:00:14Z",
+      "resource_id": "search_1874",
+      "state": "IDENTIFIABLE",
+      "system_id": "search_service"
+    }
+  ],
+  "usage": {
+    "at": "2026-10-25T04:46:11Z",
+    "attempts": [
+      {
+        "failure": "",
+        "input_tokens": 1962,
+        "max_output_tokens": 8192,
+        "model": "gemini-3.5-flash-lite",
+        "ok": true,
+        "output_tokens": 359,
+        "provider": "gemini",
+        "requested_model": "gemini-3.5-flash-lite",
+        "retry": false,
+        "usage_reported": true
+      }
+    ],
+    "input_tokens": 1962,
+    "model": "gemini-3.5-flash-lite",
+    "output_tokens": 359,
+    "provider": "gemini",
+    "requested_model": "gemini-3.5-flash-lite",
+    "usage_reported": true
+  }
+}
