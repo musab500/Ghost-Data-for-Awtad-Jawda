@@ -35,7 +35,7 @@
       "model": "gemini-3.6-flash",
       "prompt": "v5",
       "dir": "gemini_3_6_flash_v5",
-      "note": "9 of 11 files (evidence_46 and 60 not called); made unintentionally when code/evaluation/main.py ran the pipeline with the real provider; live calls now need MULTIMODAL_LIVE=1"
+      "note": "gemini-3.6-flash, prompt v5, thinking off, in TWO sessions. Session 1: 9 files (evidence_04, 09, 14, 19, 23, 28, 32, 37, 42) were called UNPLANNED when code/evaluation/main.py ran the pipeline with the real provider. Session 2: only evidence_46 and evidence_60 were to be called (the 9 results are served from the cache); evidence_46 got HTTP 429 and the run stopped. Live calls now need MULTIMODAL_LIVE=1 or compare_multimodal.py --run"
     }
   },
   "reviews": {
@@ -92,7 +92,7 @@
       },
       "evidence_19": {
         "accepted": true,
-        "reason": "same record, state and identifiers as the image."
+        "reason": "Checked in the image: analytics_7438, user_20 and darwish.omar@icloud.com in the profile header; the transcription matches, state IDENTIFIABLE because the e-mail is displayed."
       },
       "evidence_28": {
         "accepted": true,
@@ -100,7 +100,7 @@
       },
       "evidence_37": {
         "accepted": true,
-        "reason": "all six audit records, states and identifiers match the image."
+        "reason": "Checked in the image: six events with references audit_record_001..006, subject user_03, times (UTC) and the fingerprint 8f0c...31ad of audit_record_003 match; FOUND (a user reference, no direct identifier)."
       },
       "evidence_42": {
         "accepted": true,

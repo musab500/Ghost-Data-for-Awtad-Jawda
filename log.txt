@@ -792,3 +792,24 @@ branch=person-a
 repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
 worktree=main
 parent_agent=none
+
+## [2026-10-25T05:15:00Z] evidence_46 429, images 19/37 verified, classifier batch tool, freeze-accepted
+
+User Prompt (verbatim, secrets redacted):
+Decision: when gemini-3.6-flash quota is back, run ONLY evidence_46 and evidence_60 (v5, same model, 13s pause, stop on first failure/429 and report the exact message). Keep the 9 recorded results. Document in NOTES.md and the VLM section that v5 results come from two sessions and 9 calls were unplanned, with ledger entries. Then: 1) open images for evidence_19 and 37 and verify; review 46 and 60. 2) per-file adoption, documented; freeze only what is verified. 3) classifier: run in batches with the cache, stop on first 429; if it completes run final_run.py --require-llm, else without it and state the classifier mode honestly. 4) report the row diff against committed output.csv (expected 0); do not commit output.csv before the final run passes. Tell Person B to merge 1947b6f and b9e932c.
+
+Agent Response Summary:
+Verified evidence_19 and 37 against their images. Called only evidence_46: HTTP 429 RESOURCE_EXHAUSTED, run stopped, evidence_60 not called (recorded in the ledger). Documented the two sessions and the unplanned calls in NOTES.md and the VLM section, added freeze_accepted (per-file freezing from vlm_review.json) with a test, and a paced classifier batch tool; moved 398 fallback-sourced entries out of the classifier cache so only real model verdicts count. The classifier batch is running in the background.
+
+Actions:
+* edited NOTES.md, vlm_review.json, vlm_section.py, compare_multimodal.py, tests; new tools/classify_batch.py
+* one live vision call (429); classifier batch calls on gemini-3.5-flash-lite (in progress)
+* output.csv untouched; nothing frozen
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=person-a
+repo_root=/home/user/repo_extract/hackerrank-orchestrate-october26-main
+worktree=main
+parent_agent=none

@@ -624,3 +624,22 @@ class NoLiveCallWithoutOptIn(unittest.TestCase):
             os.environ.pop("MULTIMODAL_LIVE", None)
             if env is not None:
                 os.environ["MULTIMODAL_LIVE"] = env
+
+
+class FreezeAccepted(unittest.TestCase):
+    def test_freezes_only_accepted_files_of_the_run(self):
+        tool = _compare_tool()
+        _o, _s, skipped = load_evidence(DATASET)
+        pngs = {e.file_id: e for e in skipped if e.kind == "png"}
+        review = json.loads((Path(tool.REPO) / "code" / "evaluation" / "vlm_review.json").read_text())
+        meta = review["runs"]["run6"]
+        with tempfile.TemporaryDirectory() as d:
+            cache, frozen = Path(d) / "c", Path(d) / "f"
+            cache.mkdir()
+            for fid in ("evidence_14", "evidence_32"):         # accepted / rejected in run6
+                e = {"file_id": fid, "file_sha256": multimodal._sha256(pngs[fid].path),
+                     "extractor": {"method": "vlm", "provider": "gemini", "model": meta["model"],
+                                   "prompt_version": meta["prompt"]}, "records": []}
+                (cache / f"{fid}.json").write_text(json.dumps(e))
+            self.assertEqual(tool.freeze_accepted(DATASET, cache, frozen, "run6"), ["evidence_14"])
+            self.assertEqual([p.name for p in frozen.glob("*.json")], ["evidence_14.json"])

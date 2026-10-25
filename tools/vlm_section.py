@@ -67,6 +67,16 @@ def runs_table(review: dict) -> list[str]:
     return rows
 
 
+def unplanned_table() -> list[str]:
+    calls = json.loads(multimodal.PRIOR_RUNS_PATH.read_text(encoding="utf-8")).get("calls", [])
+    odd = [c for c in calls if "unplanned" in str(c.get("run", "")) or "session2" in str(c.get("run", ""))]
+    rows = ["| Ledger run label | File | Model | Time (UTC) | Input | Output | Outcome |", "|---|---|---|---|---|---|---|"]
+    for c in sorted(odd, key=lambda c: (c.get("run", ""), c.get("at") or "", c["file_id"])):
+        rows.append(f"| {c['run']} | {c['file_id']} | {c['model']} | {c.get('at', '')} | {c['input_tokens']:,} | "
+                    f"{c['output_tokens']:,} | {'ok' if c['ok'] else 'failed: ' + str(c.get('error_kind'))} |")
+    return rows
+
+
 def agreement_table(review: dict) -> list[str]:
     ds = REPO / "dataset"
     _o, _s, skipped = load_evidence(ds)
@@ -126,6 +136,10 @@ def main():
         "`system_id` and category from the resource-id prefix; v5 data flows/backups take only "
         "ACTIVE/DISABLED/BLOCKED, a retained reference without direct identifiers is REDACTED, linked records "
         "are listed. All wording is generic (see `code/parsers/NOTES.md`).", "",
+        "The prompt-v5 run on `gemini-3.6-flash` (run6) comes from **two sessions**, and its first 9 calls were "
+        "**unplanned**: `code/evaluation/main.py` ran the pipeline with the real provider. Calls made without a plan "
+        "(or the failed attempt of the second session), as recorded in the ledger:", "",
+        *unplanned_table(), "",
         "### Agreement with the manual transcription, per file and run", "",
         *agreement_table(review), "",
         "### Review of the latest verified run against the images", "",

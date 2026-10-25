@@ -172,6 +172,30 @@ def freeze(dataset: Path, cache_dir: Path, frozen_dir: Path) -> int:
     return n
 
 
+def freeze_accepted(dataset: Path, cache_dir: Path, frozen_dir: Path, run: str) -> list[str]:
+    """Freeze only the files that vlm_review.json lists as accepted for ``run`` (verified against
+    the image). Each file's result is taken from the cache entry of that run's model and prompt."""
+    review = json.loads((REPO / "code" / "evaluation" / "vlm_review.json").read_text(encoding="utf-8"))
+    meta = review["runs"][run]
+    accepted = {f for f, r in review["reviews"][run].items() if r["accepted"]}
+    _o, _s, skipped = load_evidence(dataset)
+    frozen_dir.mkdir(parents=True, exist_ok=True)
+    done = []
+    for ev in skipped:
+        if ev.kind != "png" or ev.file_id not in accepted:
+            continue
+        sha = multimodal._sha256(ev.path)
+        for p in sorted(cache_dir.glob("*.json")):
+            e = json.loads(p.read_text(encoding="utf-8"))
+            x = e.get("extractor", {})
+            if multimodal._is_vlm_entry(e, sha) and x.get("model") == meta["model"] \
+                    and x.get("prompt_version") == meta["prompt"]:
+                shutil.copy(p, frozen_dir / p.name)
+                done.append(ev.file_id)
+                break
+    return sorted(done)
+
+
 def pipeline_diff(dataset: Path) -> str:
     """Run code/main.py with manual transcriptions allowed vs forbidden."""
     outs = {}
@@ -200,6 +224,7 @@ def main():
     ap.add_argument("--dataset", default=str(REPO / "dataset"))
     ap.add_argument("--run", action="store_true", help="call the vision model once per PNG first (needs a provider key)")
     ap.add_argument("--freeze", action="store_true", help="copy live-call results into code/multimodal_vlm/")
+    ap.add_argument("--freeze-accepted", metavar="RUN", help="freeze only the files vlm_review.json accepts for RUN (e.g. run6)")
     ap.add_argument("--pipeline-diff", action="store_true")
     ap.add_argument("--out")
     a = ap.parse_args()
@@ -219,6 +244,9 @@ def main():
     if a.freeze:
         print(f"froze {freeze(ds, multimodal.CACHE_DIR, multimodal.FROZEN_DIR)} vision result(s) into "
               f"{multimodal.FROZEN_DIR}", file=sys.stderr)
+    if a.freeze_accepted:
+        done = freeze_accepted(ds, multimodal.CACHE_DIR, multimodal.FROZEN_DIR, a.freeze_accepted)
+        print(f"froze {len(done)} accepted result(s) ({', '.join(done)}) into {multimodal.FROZEN_DIR}", file=sys.stderr)
     text, _ = build_report(ds, multimodal.CACHE_DIR, multimodal.FROZEN_DIR, multimodal.MANUAL_DIR)
     if a.pipeline_diff:
         text += "\n\nPipeline output, manual transcriptions allowed vs VLM only (code/main.py):\n\n" + pipeline_diff(ds)

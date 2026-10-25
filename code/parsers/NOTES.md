@@ -248,6 +248,25 @@ Pipeline rows that would change with the run-5 results: **case_63** (wrong: lose
 remediation / verification) and **case_46** (loses `VERIFY_RECORD_REDACTED` on `tombstone_17`); neither
 change is accepted, so `output.csv` is unchanged.
 
+**Run 6 (gemini-3.6-flash, prompt v5, thinking off): two sessions, 9 unplanned calls.**
+Session 1 (12:54-12:57 Asia/Kuala_Lumpur): 9 files (evidence_04, 09, 14, 19, 23, 28, 32, 37, 42) were called
+**unplanned**: `code/evaluation/main.py` ran the whole pipeline with the real provider while I regenerated the
+reports. Every call is in the ledger (`run6_flash_prompt_v5_unplanned_by_evaluation_main`, timestamps and tokens
+in `code/evaluation/vlm_section.md`); the raw results are in `code/evaluation/vlm_runs/gemini_3_6_flash_v5/`. Two
+earlier sets of unplanned calls (run 3, prompt v4, made by a unit test) are listed the same way. Since then a
+live vision call needs `MULTIMODAL_LIVE=1` or `tools/compare_multimodal.py --run`, and no test or report script can
+make one. Session 2 (13:04 Asia/Kuala_Lumpur): only evidence_46 and evidence_60 were to be called, the 9 results served
+from the cache; evidence_46 got HTTP 429 `RESOURCE_EXHAUSTED` ("You exceeded your current quota ...", the
+message does not say per-minute or per-day) and the run stopped; evidence_60 was not called. The free-tier daily
+quota of this model is expected to reset at about 15:00 Asia/Kuala_Lumpur.
+Review of the 9 results against the images: evidence_14, 19, 28, 37, 42, 09, 23, 04 verified (images opened:
+14, 04, 09, 23, 28, 32, 42, 19, 37), evidence_32 rejected (extra `backup_9281`, which only the activity feed
+mentions). Two corrections are made in code, not in the prompt: the model's `system_id` is replaced by the
+catalog system of the category (evidence_04 returned `identity_service` for a Customer Operations page), and the
+category follows the resource-id prefix. Pipeline output with these 9 results equals the committed `output.csv`
+(0 of 518 rows differ). Nothing is frozen yet: `python3 tools/compare_multimodal.py --freeze-accepted run6` freezes
+exactly the files `code/evaluation/vlm_review.json` accepts, after evidence_46 and 60 have been judged.
+
 **To run it** (whoever has the key, in a checkout with `.env`; `pip install -r requirements.txt`):
 
 ```bash

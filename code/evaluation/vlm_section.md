@@ -13,10 +13,36 @@ The 11 PNG screenshots have no text layer. The committed observations come from 
 | run3 | gemini-3.6-flash | v4 | 11 | 11 | 0 | 20,057 | 3,540 | 11 of 11, thinking off; made unintentionally by a unit test that used the real provider (test now hermetic) |
 | run4 | gemini-3.5-flash-lite | v4 | 11 | 0 | 11 | 0 | 0 | 11 calls failed with HTTP 400: this model rejects a thinking budget; no tokens; fixed by a model-dependent thinking setting |
 | run5 | gemini-3.5-flash-lite | v5 | 11 | 11 | 0 | 21,454 | 5,139 | 11 of 11, thinking skipped for this model |
-| run6 | gemini-3.6-flash | v5 | 9 | 9 | 0 | 17,556 | 3,456 | 9 of 11 files (evidence_46 and 60 not called); made unintentionally when code/evaluation/main.py ran the pipeline with the real provider; live calls now need MULTIMODAL_LIVE=1 |
-| **all runs** | | | 65 | 46 | 19 | 84,195 | 50,352 | free tier: billed $0; list-price equivalent in the usage report |
+| run6 | gemini-3.6-flash | v5 | 10 | 9 | 1 | 17,556 | 3,456 | gemini-3.6-flash, prompt v5, thinking off, in TWO sessions. Session 1: 9 files (evidence_04, 09, 14, 19, 23, 28, 32, 37, 42) were called UNPLANNED when code/evaluation/main.py ran the pipeline with the real provider. Session 2: only evidence_46 and evidence_60 were to be called (the 9 results are served from the cache); evidence_46 got HTTP 429 and the run stopped. Live calls now need MULTIMODAL_LIVE=1 or compare_multimodal.py --run |
+| **all runs** | | | 66 | 46 | 20 | 84,195 | 50,352 | free tier: billed $0; list-price equivalent in the usage report |
 
 Prompt versions: v2 first version; v3 per-category state guidance and no identifier copying; v4 catalog `system_id` and category from the resource-id prefix; v5 data flows/backups take only ACTIVE/DISABLED/BLOCKED, a retained reference without direct identifiers is REDACTED, linked records are listed. All wording is generic (see `code/parsers/NOTES.md`).
+
+The prompt-v5 run on `gemini-3.6-flash` (run6) comes from **two sessions**, and its first 9 calls were **unplanned**: `code/evaluation/main.py` ran the pipeline with the real provider. Calls made without a plan (or the failed attempt of the second session), as recorded in the ledger:
+
+| Ledger run label | File | Model | Time (UTC) | Input | Output | Outcome |
+|---|---|---|---|---|---|---|
+| run3_prompt_v4_unplanned_by_test_suite | evidence_04 | gemini-3.6-flash | 2026-10-25T04:34:02Z | 1,823 | 160 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_09 | gemini-3.6-flash | 2026-10-25T04:34:10Z | 1,835 | 177 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_14 | gemini-3.6-flash | 2026-10-25T04:34:18Z | 1,809 | 291 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_19 | gemini-3.6-flash | 2026-10-25T04:34:26Z | 1,809 | 73 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_23 | gemini-3.6-flash | 2026-10-25T04:34:33Z | 1,835 | 584 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_28 | gemini-3.6-flash | 2026-10-25T04:34:43Z | 1,823 | 98 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_32 | gemini-3.6-flash | 2026-10-25T04:35:00Z | 1,809 | 534 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_37 | gemini-3.6-flash | 2026-10-25T04:35:11Z | 1,835 | 774 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_42 | gemini-3.6-flash | 2026-10-25T04:35:58Z | 1,835 | 140 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_46 | gemini-3.6-flash | 2026-10-25T04:36:10Z | 1,809 | 605 | ok |
+| run3_prompt_v4_unplanned_by_test_suite | evidence_60 | gemini-3.6-flash | 2026-10-25T04:36:20Z | 1,835 | 104 | ok |
+| run6_flash_prompt_v5_session2_429 | evidence_46 | gemini-3.6-flash | 2026-10-25T05:04:45Z | 0 | 0 | failed: rate_limit |
+| run6_flash_prompt_v5_unplanned_by_evaluation_main | evidence_04 | gemini-3.6-flash | 2026-10-25T04:54:45Z | 1,950 | 411 | ok |
+| run6_flash_prompt_v5_unplanned_by_evaluation_main | evidence_09 | gemini-3.6-flash | 2026-10-25T04:55:00Z | 1,962 | 304 | ok |
+| run6_flash_prompt_v5_unplanned_by_evaluation_main | evidence_14 | gemini-3.6-flash | 2026-10-25T04:55:17Z | 1,936 | 484 | ok |
+| run6_flash_prompt_v5_unplanned_by_evaluation_main | evidence_19 | gemini-3.6-flash | 2026-10-25T04:55:32Z | 1,936 | 170 | ok |
+| run6_flash_prompt_v5_unplanned_by_evaluation_main | evidence_23 | gemini-3.6-flash | 2026-10-25T04:55:48Z | 1,962 | 387 | ok |
+| run6_flash_prompt_v5_unplanned_by_evaluation_main | evidence_28 | gemini-3.6-flash | 2026-10-25T04:56:05Z | 1,950 | 143 | ok |
+| run6_flash_prompt_v5_unplanned_by_evaluation_main | evidence_32 | gemini-3.6-flash | 2026-10-25T04:56:23Z | 1,936 | 624 | ok |
+| run6_flash_prompt_v5_unplanned_by_evaluation_main | evidence_37 | gemini-3.6-flash | 2026-10-25T04:56:50Z | 1,962 | 747 | ok |
+| run6_flash_prompt_v5_unplanned_by_evaluation_main | evidence_42 | gemini-3.6-flash | 2026-10-25T04:57:13Z | 1,962 | 186 | ok |
 
 ### Agreement with the manual transcription, per file and run
 
@@ -36,16 +62,16 @@ Prompt versions: v2 first version; v3 per-category state guidance and no identif
 
 ### Review of the latest verified run against the images
 
-run6 (gemini-3.6-flash, prompt v5): 8 of 9 reviewed files verified, 1 rejected. 9 of 11 files (evidence_46 and 60 not called); made unintentionally when code/evaluation/main.py ran the pipeline with the real provider; live calls now need MULTIMODAL_LIVE=1.
+run6 (gemini-3.6-flash, prompt v5): 8 of 9 reviewed files verified, 1 rejected. gemini-3.6-flash, prompt v5, thinking off, in TWO sessions. Session 1: 9 files (evidence_04, 09, 14, 19, 23, 28, 32, 37, 42) were called UNPLANNED when code/evaluation/main.py ran the pipeline with the real provider. Session 2: only evidence_46 and evidence_60 were to be called (the 9 results are served from the cache); evidence_46 got HTTP 429 and the run stopped. Live calls now need MULTIMODAL_LIVE=1 or compare_multimodal.py --run.
 
 | File | Decision | Why (checked against the image) |
 |---|---|---|
 | evidence_04 | VLM accepted | account_5762 and support_9538 listed; the model's system_id identity_service is replaced by the catalog system account_service (the page is Customer Operations). |
 | evidence_09 | VLM accepted | search_428 keeps user_13 and the e-mail, search_1874 the decoy e-mail; IDENTIFIABLE is right for rows that display name/e-mail. |
 | evidence_14 | VLM accepted | data flows ACTIVE (Continuous, Healthy); matches the image. |
-| evidence_19 | VLM accepted | same record, state and identifiers as the image. |
+| evidence_19 | VLM accepted | Checked in the image: analytics_7438, user_20 and darwish.omar@icloud.com in the profile header; the transcription matches, state IDENTIFIABLE because the e-mail is displayed. |
 | evidence_23 | VLM accepted | all four exports with their Owner e-mails; IDENTIFIABLE is right because the owner e-mail is displayed. |
 | evidence_28 | VLM accepted | support_1034 is a SUPPORT_MESSAGE helpline ticket, identifiers match. |
 | evidence_32 | manual kept (VLM rejected) | adds backup_9281, which appears only in the activity feed ('restored - Completed'); its ACTIVE state is not shown. |
-| evidence_37 | VLM accepted | all six audit records, states and identifiers match the image. |
+| evidence_37 | VLM accepted | Checked in the image: six events with references audit_record_001..006, subject user_03, times (UTC) and the fingerprint 8f0c...31ad of audit_record_003 match; FOUND (a user reference, no direct identifier). |
 | evidence_42 | VLM accepted | the page's own subject user_17 is the one record, a retained reference without direct identifiers (pipeline output identical to manual). |
